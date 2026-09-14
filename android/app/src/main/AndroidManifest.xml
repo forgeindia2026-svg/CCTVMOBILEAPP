@@ -2,9 +2,19 @@
     <!-- Internet & Network permissions for API requests & image downloading -->
     <uses-permission android:name="android.permission.INTERNET"/>
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
+    <!-- Live Location Permissions for Flipkart/Amazon style delivery address -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
+    <!-- Camera permission for QR & Barcode Scanner -->
+    <uses-permission android:name="android.permission.CAMERA"/>
+    <!-- Microphone permission for Voice Search -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO"/>
+    <uses-permission android:name="android.permission.BLUETOOTH"/>
+    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN"/>
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT"/>
 
     <application
-        android:label="cctvmobileapp"
+        android:label="SK Technology CCTV"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
         android:usesCleartextTraffic="true">
@@ -40,8 +50,11 @@
             android:name="io.flutter.embedding.android.EnableImpeller"
             android:value="false" />
     </application>
-    <!-- Required to query activities that can process text -->
+    <!-- Required to query activities that can process text and speech -->
     <queries>
+        <intent>
+            <action android:name="android.speech.RecognitionService" />
+        </intent>
         <intent>
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>

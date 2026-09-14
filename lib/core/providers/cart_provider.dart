@@ -55,6 +55,25 @@ class CartProvider extends ChangeNotifier {
     _saveCart();
   }
 
+  int getItemQuantity(String productId) {
+    final item = _items.firstWhere((i) => i['productId'] == productId, orElse: () => {});
+    if (item.isEmpty) return 0;
+    return (item['qty'] as num?)?.toInt() ?? 0;
+  }
+
+  void decrementQuantity(String productId) {
+    final index = _items.indexWhere((item) => item['productId'] == productId);
+    if (index >= 0) {
+      final currentQty = (_items[index]['qty'] as num).toInt();
+      if (currentQty <= 1) {
+        removeFromCart(productId);
+      } else {
+        _items[index]['qty'] = currentQty - 1;
+        _saveCart();
+      }
+    }
+  }
+
   void updateQuantity(String productId, int newQty) {
     if (newQty < 1) {
       removeFromCart(productId);

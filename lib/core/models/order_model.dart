@@ -1,4 +1,4 @@
-import 'package:flutter/foundation.dart';
+import '../services/api_service.dart';
 
 class OrderItemModel {
   final String productId;
@@ -17,8 +17,8 @@ class OrderItemModel {
 
   factory OrderItemModel.fromJson(Map<String, dynamic> json) {
     return OrderItemModel(
-      productId: json['productId']?.toString() ?? '',
-      title: json['title']?.toString() ?? 'Item',
+      productId: json['productId']?.toString() ?? json['_id']?.toString() ?? '',
+      title: json['title']?.toString() ?? 'Product',
       price: (json['price'] as num?)?.toDouble() ?? 0.0,
       quantity: (json['quantity'] as num?)?.toInt() ?? 1,
       image: json['image']?.toString() ?? '',
@@ -29,15 +29,8 @@ class OrderItemModel {
 
   String get fullImageUrl {
     if (image.isEmpty) return '';
-    if (image.startsWith('http://') || image.startsWith('https://')) {
-      if (!kIsWeb && image.contains('localhost:5000')) {
-        return image.replaceAll('localhost:5000', '10.10.101.68:5000');
-      }
-      return image;
-    }
-    final host = kIsWeb ? 'http://localhost:5000' : 'http://10.10.101.68:5000';
-    String path = image.startsWith('/') ? image : '/$image';
-    return '$host$path';
+    if (image.startsWith('local:')) return image;
+    return ApiService.resolveImageUrl(image);
   }
 }
 

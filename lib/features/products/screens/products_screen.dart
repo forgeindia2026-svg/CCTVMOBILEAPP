@@ -1,14 +1,30 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/models/product_model.dart';
+import '../../../core/providers/cart_provider.dart';
+import '../../../core/providers/wishlist_provider.dart';
+import '../../../core/providers/language_provider.dart';
 import '../../../core/services/api_service.dart';
+import '../../../core/widgets/app_image.dart';
 import '../../cart/screens/cart_screen.dart';
 import '../../product_detail/screens/product_detail_screen.dart';
+import '../../search/screens/barcode_scanner_screen.dart';
+import '../../search/widgets/voice_search_bottom_sheet.dart';
 
 class ProductsScreen extends StatefulWidget {
   final String? initialCategory;
+  final String? initialSearchQuery;
+  final double? maxPrice;
+  final double? minPrice;
 
-  const ProductsScreen({super.key, this.initialCategory});
+  const ProductsScreen({
+    super.key,
+    this.initialCategory,
+    this.initialSearchQuery,
+    this.maxPrice,
+    this.minPrice,
+  });
 
   @override
   State<ProductsScreen> createState() => _ProductsScreenState();
@@ -18,12 +34,14 @@ class _ProductsScreenState extends State<ProductsScreen> {
   bool _isGridView = true;
   String _selectedSort = 'Popularity';
   String _searchQuery = '';
+  late final TextEditingController _searchController;
   String _selectedCategory = 'All';
   String? _selectedSubCategory;
   bool _isCctvExpanded = true;
 
   bool _isLoading = true;
   List<ProductModel> _backendProducts = [];
+  final Set<String> _wishlistedIds = {};
   
   List<String> _selectedBrands = [];
   double _selectedMinRating = 0.0;
@@ -36,44 +54,46 @@ class _ProductsScreenState extends State<ProductsScreen> {
     'Customer Rating',
   ];
 
-  final List<Map<String, dynamic>> _fallbackProducts = const [
-    {
-      '_id': 'fallback-1',
-      'title': 'Hikvision 2MP Bullet Camera',
-      'model': 'DS-2CE16D0T-ITF',
-      'category': 'CCTV Cameras',
-      'subCategory': 'Bullet Cameras',
-      'brand': 'Hikvision',
-      'rating': 4.8,
-      'reviewsCount': 128,
-      'price': 2699.0,
-      'originalPrice': 3999.0,
-      'badge': '32% OFF',
-      'image': 'https://images.unsplash.com/photo-1557597774-9d273605dfa9?auto=format&fit=crop&w=600&q=80',
-    },
-    {
-      '_id': 'fallback-2',
-      'title': 'CP Plus 2MP Dome Camera',
-      'model': 'CP-UNC-TA21PL3C',
-      'category': 'CCTV Cameras',
-      'subCategory': 'Dome Cameras',
-      'brand': 'CP Plus',
-      'rating': 4.7,
-      'reviewsCount': 96,
-      'price': 2099.0,
-      'originalPrice': 3299.0,
-      'badge': '37% OFF',
-      'image': 'https://images.unsplash.com/photo-1580894732444-8ecded7900cd?auto=format&fit=crop&w=600&q=80',
-    },
-  ];
+  final List<Map<String, dynamic>> _fallbackProducts = const [];
 
   @override
   void initState() {
     super.initState();
+    _searchQuery = widget.initialSearchQuery ?? '';
+    _searchController = TextEditingController(text: _searchQuery);
     if (widget.initialCategory != null) {
       _selectedCategory = widget.initialCategory!;
     }
     _loadProducts();
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _handleVoiceSearch() async {
+    final result = await VoiceSearchBottomSheet.show(context);
+    if (result != null && result.trim().isNotEmpty) {
+      setState(() {
+        _searchQuery = result.trim();
+        _searchController.text = _searchQuery;
+      });
+    }
+  }
+
+  Future<void> _handleBarcodeScan() async {
+    final result = await Navigator.push<String>(
+      context,
+      MaterialPageRoute(builder: (context) => const BarcodeScannerScreen()),
+    );
+    if (result != null && result.trim().isNotEmpty) {
+      setState(() {
+        _searchQuery = result.trim();
+        _searchController.text = _searchQuery;
+      });
+    }
   }
 
   Future<void> _loadProducts() async {
@@ -100,62 +120,102 @@ class _ProductsScreenState extends State<ProductsScreen> {
   }
 
   List<ProductModel> get _displayProducts {
-    final List<ProductModel> listToFilter = _backendProducts.isNotEmpty
-        ? _backendProducts
-        : _fallbackProducts.map((e) => ProductModel.fromJson(e)).toList();
+    final listToFilter = _backendProducts.isNotEmpty ? _backendProducts : <ProductModel>[];
 
     return listToFilter.where((product) {
-      final cat = product.category.toLowerCase();
-      final selCat = _selectedCategory.toLowerCase();
+      final cat = product.category.toLowerCase().trim();
+      final title = product.title.toLowerCase().trim();
+      final desc = product.description.toLowerCase().trim();
+      final selCat = _selectedCategory.toLowerCase().trim();
 
-      bool matchesCategory = selCat == 'all' || selCat == 'all products';
+      bool matchesCategory = selCat == 'all' || selCat == 'all products' || selCat.isEmpty;
       if (!matchesCategory) {
-        if (selCat == 'cctv cameras' || selCat == 'cctv') {
+        if (selCat == 'cctv cameras' || selCat == 'cctv' || selCat == 'cameras') {
           matchesCategory = cat.contains('ip') ||
+              cat.contains('wifi') ||
               cat.contains('bullet') ||
               cat.contains('dome') ||
               cat.contains('camera') ||
-              cat.contains('cctv');
+              cat.contains('cctv') ||
+              title.contains('camera') ||
+              title.contains('cctv');
         } else if (selCat == 'dvr') {
-          matchesCategory = cat.contains('dvr');
+          matchesCategory = cat.contains('dvr') || title.contains('dvr');
         } else if (selCat == 'nvr') {
-          matchesCategory = cat.contains('nvr');
+          matchesCategory = cat.contains('nvr') || title.contains('nvr');
         } else if (selCat == 'accessories') {
-          matchesCategory = cat.contains('accessories') || cat.contains('cable') || cat.contains('power');
+          matchesCategory = cat.contains('accessories') ||
+              cat.contains('cable') ||
+              cat.contains('power') ||
+              cat.contains('adapter') ||
+              cat.contains('connector') ||
+              title.contains('cable') ||
+              title.contains('power') ||
+              title.contains('smps') ||
+              title.contains('adapter') ||
+              title.contains('accessories');
         } else if (selCat == 'hard disk') {
-          matchesCategory = cat.contains('hard') || cat.contains('hdd') || cat.contains('disk');
+          matchesCategory = cat.contains('hard') ||
+              cat.contains('hdd') ||
+              cat.contains('disk') ||
+              title.contains('hard disk') ||
+              title.contains('hdd') ||
+              title.contains('terabyte') ||
+              title.contains('tb') ||
+              desc.contains('hdd');
         } else if (selCat == 'video door phone') {
-          matchesCategory = cat.contains('door') || cat.contains('vdp') || cat.contains('phone');
+          matchesCategory = cat.contains('door') ||
+              cat.contains('vdp') ||
+              cat.contains('phone') ||
+              title.contains('door phone') ||
+              title.contains('vdp');
         } else {
-          matchesCategory = cat.contains(selCat);
+          matchesCategory = cat.contains(selCat) || title.contains(selCat);
         }
       }
 
       bool matchesSubCategory = true;
       if (_selectedSubCategory != null && _selectedSubCategory!.isNotEmpty) {
-        final sub = _selectedSubCategory!.toLowerCase();
-        final title = product.title.toLowerCase();
-        
-        // Map UI subcategory names to search keywords
+        final sub = _selectedSubCategory!.toLowerCase().trim();
         String keyword = sub;
         if (sub == 'ip cameras') keyword = 'ip';
         else if (sub == 'wifi cameras') keyword = 'wifi';
         else if (sub == 'ptz cameras') keyword = 'ptz';
         else if (sub == 'dome cameras') keyword = 'dome';
         else if (sub == 'bullet cameras') keyword = 'bullet';
-        
+
         matchesSubCategory = cat.contains(keyword) || title.contains(keyword);
       }
 
-      final matchesSearch = _searchQuery.isEmpty ||
-          product.title.toLowerCase().contains(_searchQuery.toLowerCase()) ||
-          product.brand.toLowerCase().contains(_searchQuery.toLowerCase()) ||
-          product.category.toLowerCase().contains(_searchQuery.toLowerCase());
+      final searchTerms = _searchQuery.toLowerCase().trim().split(RegExp(r'\s+'));
+      final matchesSearch = _searchQuery.trim().isEmpty ||
+          searchTerms.every((term) {
+            if (term == 'cctv') return true;
+            return title.contains(term) ||
+                product.brand.toLowerCase().contains(term) ||
+                cat.contains(term) ||
+                desc.contains(term);
+          });
 
-      final matchesBrand = _selectedBrands.isEmpty || _selectedBrands.contains(product.brand);
-      final matchesRating = product.rating >= _selectedMinRating;
+      final matchesBrand = _selectedBrands.isEmpty ||
+          _selectedBrands.any((selected) {
+            final s = _normalizeBrandName(selected).toLowerCase();
+            final pb = _normalizeBrandName(product.brand).toLowerCase();
+            final pt = title.toLowerCase();
+            return pb == s || pb.contains(s) || s.contains(pb) || pt.contains(s);
+          });
 
-      return matchesCategory && matchesSubCategory && matchesSearch && matchesBrand && matchesRating;
+      final matchesRating = _selectedMinRating == 0.0 || product.rating >= _selectedMinRating;
+      final matchesMaxPrice = widget.maxPrice == null || product.price <= widget.maxPrice!;
+      final matchesMinPrice = widget.minPrice == null || product.price >= widget.minPrice!;
+
+      return matchesCategory &&
+          matchesSubCategory &&
+          matchesSearch &&
+          matchesBrand &&
+          matchesRating &&
+          matchesMaxPrice &&
+          matchesMinPrice;
     }).toList();
   }
 
@@ -168,7 +228,13 @@ class _ProductsScreenState extends State<ProductsScreen> {
       filtered.sort((a, b) => b.price.compareTo(a.price));
     } else if (_selectedSort == 'Customer Rating') {
       filtered.sort((a, b) => b.rating.compareTo(a.rating));
+    } else if (_selectedSort == 'Newest First') {
+      filtered.sort((a, b) => b.id.compareTo(a.id));
+    } else if (_selectedSort == 'Popularity') {
+      filtered.sort((a, b) => b.reviewsCount.compareTo(a.reviewsCount));
     }
+
+    final lang = Provider.of<LanguageProvider>(context);
 
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
@@ -191,15 +257,48 @@ class _ProductsScreenState extends State<ProductsScreen> {
           child: SizedBox(
             height: 42,
             child: TextField(
+              controller: _searchController,
               onChanged: (val) {
                 setState(() {
                   _searchQuery = val;
                 });
               },
               decoration: InputDecoration(
-                hintText: 'cctv camera',
-                hintStyle: const TextStyle(color: Color(0xFF64748B), fontSize: 14),
+                hintText: lang.tr('search_hint'),
+                hintStyle: const TextStyle(color: Color(0xFF64748B), fontSize: 13),
                 prefixIcon: const Icon(Icons.search, color: Color(0xFF475569), size: 20),
+                suffixIcon: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (_searchQuery.isNotEmpty)
+                      GestureDetector(
+                        onTap: () {
+                          setState(() {
+                            _searchQuery = '';
+                            _searchController.clear();
+                          });
+                        },
+                        child: const Padding(
+                          padding: EdgeInsets.symmetric(horizontal: 4),
+                          child: Icon(Icons.close, color: Color(0xFF64748B), size: 18),
+                        ),
+                      ),
+                    GestureDetector(
+                      onTap: _handleVoiceSearch,
+                      child: const Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 4),
+                        child: Icon(Icons.mic, color: AppColors.primaryRed, size: 20),
+                      ),
+                    ),
+                    GestureDetector(
+                      onTap: _handleBarcodeScan,
+                      child: const Padding(
+                        padding: EdgeInsets.only(left: 4, right: 10),
+                        child: Icon(Icons.qr_code_scanner, color: Color(0xFF475569), size: 20),
+                      ),
+                    ),
+                  ],
+                ),
                 fillColor: Colors.white,
                 filled: true,
                 contentPadding: const EdgeInsets.symmetric(vertical: 0, horizontal: 16),
@@ -216,35 +315,42 @@ class _ProductsScreenState extends State<ProductsScreen> {
           ),
         ),
         actions: [
-          // Shopping Cart with Red Badge Count (Matching Image 1)
-          Stack(
-            alignment: Alignment.center,
-            children: [
-              IconButton(
-                icon: const Icon(Icons.shopping_cart_outlined, color: Color(0xFF0F172A), size: 24),
+          // Shopping Cart with Dynamic Red Badge Count
+          Consumer<CartProvider>(
+            builder: (context, cart, child) {
+              final count = cart.itemCount;
+              return IconButton(
                 onPressed: () {
                   Navigator.push(
                     context,
                     MaterialPageRoute(builder: (context) => const CartScreen()),
                   );
                 },
-              ),
-              Positioned(
-                right: 6,
-                top: 6,
-                child: Container(
-                  padding: const EdgeInsets.all(4),
-                  decoration: const BoxDecoration(
-                    color: AppColors.primaryRed,
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Text(
-                    '8',
-                    style: TextStyle(color: Colors.white, fontSize: 8, fontWeight: FontWeight.bold),
-                  ),
+                icon: Stack(
+                  clipBehavior: Clip.none,
+                  alignment: Alignment.center,
+                  children: [
+                    const Icon(Icons.shopping_cart_outlined, color: Color(0xFF0F172A), size: 24),
+                    if (count > 0)
+                      Positioned(
+                        right: -4,
+                        top: -4,
+                        child: Container(
+                          padding: const EdgeInsets.all(4),
+                          decoration: const BoxDecoration(
+                            color: AppColors.primaryRed,
+                            shape: BoxShape.circle,
+                          ),
+                          child: Text(
+                            '$count',
+                            style: const TextStyle(color: Colors.white, fontSize: 8, fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                      ),
+                  ],
                 ),
-              ),
-            ],
+              );
+            },
           ),
           IconButton(
             icon: const Icon(Icons.refresh, color: Color(0xFF2563EB), size: 20),
@@ -267,52 +373,127 @@ class _ProductsScreenState extends State<ProductsScreen> {
               scrollDirection: Axis.horizontal,
               padding: const EdgeInsets.symmetric(horizontal: 16),
               children: [
-                // Sort & Filter Chip
+                // Clear All Button (if any filter is active)
+                if (_selectedSort != 'Popularity' ||
+                    _selectedCategory != 'All' ||
+                    _selectedSubCategory != null ||
+                    _selectedBrands.isNotEmpty ||
+                    _selectedMinRating > 0) ...[
+                  InkWell(
+                    onTap: () {
+                      setState(() {
+                        _selectedSort = 'Popularity';
+                        _selectedCategory = 'All';
+                        _selectedSubCategory = null;
+                        _selectedBrands.clear();
+                        _selectedMinRating = 0.0;
+                      });
+                    },
+                    borderRadius: BorderRadius.circular(6),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFEE2E2),
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(color: AppColors.primaryRed),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: const [
+                          Icon(Icons.close, size: 13, color: AppColors.primaryRed),
+                          SizedBox(width: 4),
+                          Text('Clear All', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppColors.primaryRed)),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                ],
+
+                // Sort Chip
                 InkWell(
                   onTap: () => _showSortBottomSheet(context),
                   borderRadius: BorderRadius.circular(6),
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                     decoration: BoxDecoration(
-                      color: Colors.white,
+                      color: _selectedSort != 'Popularity' ? const Color(0xFFFEF2F2) : Colors.white,
                       borderRadius: BorderRadius.circular(6),
-                      border: Border.all(color: Colors.black, width: 1.2),
+                      border: Border.all(
+                        color: _selectedSort != 'Popularity' ? AppColors.primaryRed : const Color(0xFFD1D5DB),
+                        width: _selectedSort != 'Popularity' ? 1.2 : 1.0,
+                      ),
                     ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
-                      children: const [
-                        Text('Sort', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: Colors.black)),
-                        SizedBox(width: 6),
-                        Icon(Icons.swap_vert, size: 14, color: Colors.black),
+                      children: [
+                        Text(
+                          _selectedSort == 'Popularity' ? lang.tr('sort') : _selectedSort,
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: _selectedSort != 'Popularity' ? FontWeight.bold : FontWeight.w500,
+                            color: _selectedSort != 'Popularity' ? AppColors.primaryRed : Colors.black,
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        Icon(
+                          Icons.swap_vert,
+                          size: 14,
+                          color: _selectedSort != 'Popularity' ? AppColors.primaryRed : Colors.black,
+                        ),
                       ],
                     ),
                   ),
                 ),
                 const SizedBox(width: 8),
 
-                // Filter Chip (Categories)
+                // Category Filter Chip
                 InkWell(
                   onTap: () => _showFilterBottomSheet(context),
                   borderRadius: BorderRadius.circular(6),
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                     decoration: BoxDecoration(
-                      color: Colors.white,
+                      color: (_selectedCategory != 'All' || _selectedSubCategory != null)
+                          ? const Color(0xFFFEF2F2)
+                          : Colors.white,
                       borderRadius: BorderRadius.circular(6),
-                      border: Border.all(color: const Color(0xFFD1D5DB)),
+                      border: Border.all(
+                        color: (_selectedCategory != 'All' || _selectedSubCategory != null)
+                            ? AppColors.primaryRed
+                            : const Color(0xFFD1D5DB),
+                        width: (_selectedCategory != 'All' || _selectedSubCategory != null) ? 1.2 : 1.0,
+                      ),
                     ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
-                      children: const [
-                        Text('Filter', style: TextStyle(fontSize: 12, color: Color(0xFF4B5563))),
-                        SizedBox(width: 6),
-                        Icon(Icons.filter_alt_outlined, size: 14, color: Color(0xFF4B5563)),
+                      children: [
+                        Text(
+                          _selectedSubCategory ?? (_selectedCategory != 'All' ? _selectedCategory : lang.tr('filter')),
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: (_selectedCategory != 'All' || _selectedSubCategory != null)
+                                ? FontWeight.bold
+                                : FontWeight.normal,
+                            color: (_selectedCategory != 'All' || _selectedSubCategory != null)
+                                ? AppColors.primaryRed
+                                : const Color(0xFF4B5563),
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        Icon(
+                          Icons.filter_alt_outlined,
+                          size: 14,
+                          color: (_selectedCategory != 'All' || _selectedSubCategory != null)
+                              ? AppColors.primaryRed
+                              : const Color(0xFF4B5563),
+                        ),
                       ],
                     ),
                   ),
                 ),
                 const SizedBox(width: 8),
-                
+
                 // Brand Filter Chip
                 InkWell(
                   onTap: () => _showBrandBottomSheet(context),
@@ -320,16 +501,32 @@ class _ProductsScreenState extends State<ProductsScreen> {
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                     decoration: BoxDecoration(
-                      color: Colors.white,
+                      color: _selectedBrands.isNotEmpty ? const Color(0xFFFEF2F2) : Colors.white,
                       borderRadius: BorderRadius.circular(6),
-                      border: Border.all(color: const Color(0xFFD1D5DB)),
+                      border: Border.all(
+                        color: _selectedBrands.isNotEmpty ? AppColors.primaryRed : const Color(0xFFD1D5DB),
+                        width: _selectedBrands.isNotEmpty ? 1.2 : 1.0,
+                      ),
                     ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
-                      children: const [
-                        Text('Brand', style: TextStyle(fontSize: 12, color: Color(0xFF4B5563))),
-                        SizedBox(width: 4),
-                        Icon(Icons.keyboard_arrow_down, size: 14, color: Color(0xFF4B5563)),
+                      children: [
+                        Text(
+                          _selectedBrands.isNotEmpty
+                              ? (_selectedBrands.length == 1 ? _selectedBrands.first : '${lang.tr('brand')} (${_selectedBrands.length})')
+                              : lang.tr('brand'),
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: _selectedBrands.isNotEmpty ? FontWeight.bold : FontWeight.normal,
+                            color: _selectedBrands.isNotEmpty ? AppColors.primaryRed : const Color(0xFF4B5563),
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        Icon(
+                          Icons.keyboard_arrow_down,
+                          size: 14,
+                          color: _selectedBrands.isNotEmpty ? AppColors.primaryRed : const Color(0xFF4B5563),
+                        ),
                       ],
                     ),
                   ),
@@ -343,16 +540,30 @@ class _ProductsScreenState extends State<ProductsScreen> {
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                     decoration: BoxDecoration(
-                      color: Colors.white,
+                      color: _selectedMinRating > 0 ? const Color(0xFFFEF2F2) : Colors.white,
                       borderRadius: BorderRadius.circular(6),
-                      border: Border.all(color: const Color(0xFFD1D5DB)),
+                      border: Border.all(
+                        color: _selectedMinRating > 0 ? AppColors.primaryRed : const Color(0xFFD1D5DB),
+                        width: _selectedMinRating > 0 ? 1.2 : 1.0,
+                      ),
                     ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
-                      children: const [
-                        Text('Rating', style: TextStyle(fontSize: 12, color: Color(0xFF4B5563))),
-                        SizedBox(width: 4),
-                        Icon(Icons.keyboard_arrow_down, size: 14, color: Color(0xFF4B5563)),
+                      children: [
+                        Text(
+                          _selectedMinRating > 0 ? '${_selectedMinRating.toInt()}★ & up' : lang.tr('rating'),
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: _selectedMinRating > 0 ? FontWeight.bold : FontWeight.normal,
+                            color: _selectedMinRating > 0 ? AppColors.primaryRed : const Color(0xFF4B5563),
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        Icon(
+                          Icons.keyboard_arrow_down,
+                          size: 14,
+                          color: _selectedMinRating > 0 ? AppColors.primaryRed : const Color(0xFF4B5563),
+                        ),
                       ],
                     ),
                   ),
@@ -394,7 +605,9 @@ class _ProductsScreenState extends State<ProductsScreen> {
             color: Colors.white,
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
             child: Text(
-              'Showing ${filtered.length} products',
+              widget.maxPrice != null
+                  ? '${lang.tr('showing_products')} (${filtered.length}) • Under ₹${widget.maxPrice!.toInt()}'
+                  : '${lang.tr('showing_products')} (${filtered.length})',
               style: const TextStyle(fontSize: 11, color: AppColors.textMuted, fontWeight: FontWeight.w500),
             ),
           ),
@@ -431,7 +644,7 @@ class _ProductsScreenState extends State<ProductsScreen> {
                             padding: const EdgeInsets.all(12),
                             gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                               crossAxisCount: 2,
-                              childAspectRatio: 0.52,
+                              childAspectRatio: 0.47,
                               crossAxisSpacing: 10,
                               mainAxisSpacing: 10,
                             ),
@@ -457,6 +670,7 @@ class _ProductsScreenState extends State<ProductsScreen> {
 
   // 2-Column Grid Item Card Layout (Flipkart Style)
   Widget _buildGridProductCard(BuildContext context, ProductModel item) {
+    final lang = Provider.of<LanguageProvider>(context);
     final imageUrl = item.fullImageUrl;
 
     return GestureDetector(
@@ -495,25 +709,12 @@ class _ProductsScreenState extends State<ProductsScreen> {
                   aspectRatio: 1.0,
                   child: Container(
                     width: double.infinity,
-                    padding: EdgeInsets.zero, // Removed unnecessary padding
+                    padding: const EdgeInsets.all(4),
                     color: Colors.white,
                     child: Center(
-                    child: SizedBox(
-                      width: double.infinity,
-                      height: double.infinity,
-                      child: imageUrl.isNotEmpty
-                      ? (imageUrl.startsWith('local:') 
-                          ? Image.asset(
-                              'assets/images/${imageUrl.split(':')[1]}',
-                              fit: BoxFit.contain,
-                              errorBuilder: (ctx, err, stack) => const Icon(Icons.videocam, color: AppColors.primaryRed, size: 40),
-                            )
-                          : Image.network(
-                              imageUrl,
-                              fit: BoxFit.contain,
-                              errorBuilder: (ctx, err, stack) => const Icon(Icons.videocam, color: AppColors.primaryRed, size: 40),
-                            ))
-                      : const Icon(Icons.videocam, color: AppColors.primaryRed, size: 40),
+                      child: AppImage(
+                        imageUrl: item.image,
+                        fit: BoxFit.contain,
                       ),
                     ),
                   ),
@@ -536,14 +737,18 @@ class _ProductsScreenState extends State<ProductsScreen> {
                         ),
                       ),
                       const SizedBox(height: 2),
-                      // Title
-                      Text(
-                        item.title,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontSize: 12,
-                          color: Color(0xFF212121),
+                      // Title (Consistent 2-line height)
+                      SizedBox(
+                        height: 30,
+                        child: Text(
+                          item.title,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 11.5,
+                            height: 1.25,
+                            color: Color(0xFF212121),
+                          ),
                         ),
                       ),
                       const SizedBox(height: 4),
@@ -560,7 +765,7 @@ class _ProductsScreenState extends State<ProductsScreen> {
                               mainAxisSize: MainAxisSize.min,
                               children: [
                                 Text(
-                                  '${item.rating}',
+                                  '${item.displayRating}',
                                   style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
                                 ),
                                 const SizedBox(width: 2),
@@ -570,7 +775,7 @@ class _ProductsScreenState extends State<ProductsScreen> {
                           ),
                           const SizedBox(width: 4),
                           Text(
-                            '(${item.reviewsCount})',
+                            '(${item.displayReviewsCount})',
                             style: const TextStyle(fontSize: 10, color: Color(0xFF878787)),
                           ),
                           const SizedBox(width: 6),
@@ -607,7 +812,7 @@ class _ProductsScreenState extends State<ProductsScreen> {
                             ),
                           ),
                           const SizedBox(width: 6),
-                          if (item.formattedOriginalPrice.isNotEmpty)
+                          if (item.formattedOriginalPrice.isNotEmpty) ...[
                             Text(
                               item.formattedOriginalPrice,
                               style: const TextStyle(
@@ -616,25 +821,124 @@ class _ProductsScreenState extends State<ProductsScreen> {
                                 color: Color(0xFF878787),
                               ),
                             ),
-                          const SizedBox(width: 6),
-                          Text(
-                            item.discountTag,
-                            style: const TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.bold,
-                              color: Color(0xFF388E3C),
+                            const SizedBox(width: 6),
+                          ],
+                          Flexible(
+                            child: Text(
+                              item.discountTag,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
+                                color: Color(0xFF388E3C),
+                              ),
                             ),
                           ),
                         ],
                       ),
-                      const SizedBox(height: 4),
-                      // Free Delivery
-                      const Text(
-                        'Free Delivery',
-                        style: TextStyle(
-                          fontSize: 10,
-                          color: Color(0xFF212121),
-                        ),
+                      const SizedBox(height: 5),
+                      // Free Delivery Row
+                      Row(
+                        children: [
+                          const Icon(Icons.local_shipping_outlined, color: Color(0xFF16A34A), size: 12),
+                          const SizedBox(width: 4),
+                          Expanded(
+                            child: Text(
+                              lang.tr('free_delivery'),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 9.5,
+                                fontWeight: FontWeight.bold,
+                                color: Color(0xFF16A34A),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      // Big Add to Cart / Quantity Selector Button (Full width at bottom)
+                      Consumer<CartProvider>(
+                        builder: (context, cartProvider, child) {
+                          final qty = cartProvider.getItemQuantity(item.id);
+                          if (qty == 0) {
+                            return InkWell(
+                              onTap: () => cartProvider.addToCart(item),
+                              borderRadius: BorderRadius.circular(8),
+                              child: Container(
+                                height: 32,
+                                width: double.infinity,
+                                decoration: BoxDecoration(
+                                  color: AppColors.primaryRed.withValues(alpha: 0.08),
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(color: AppColors.primaryRed.withValues(alpha: 0.4), width: 1.2),
+                                ),
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    const Icon(Icons.add_shopping_cart, color: AppColors.primaryRed, size: 13),
+                                    const SizedBox(width: 5),
+                                    Text(
+                                      lang.tr('add_to_cart').toUpperCase(),
+                                      style: const TextStyle(
+                                        color: AppColors.primaryRed,
+                                        fontWeight: FontWeight.w900,
+                                        fontSize: 11.5,
+                                        letterSpacing: 0.4,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          }
+
+                          return Container(
+                            height: 32,
+                            width: double.infinity,
+                            decoration: BoxDecoration(
+                              color: AppColors.primaryRed,
+                              borderRadius: BorderRadius.circular(8),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: AppColors.primaryRed.withValues(alpha: 0.25),
+                                  blurRadius: 4,
+                                  offset: const Offset(0, 2),
+                                ),
+                              ],
+                            ),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                InkWell(
+                                  onTap: () => cartProvider.decrementQuantity(item.id),
+                                  borderRadius: const BorderRadius.horizontal(left: Radius.circular(8)),
+                                  child: const Padding(
+                                    padding: EdgeInsets.symmetric(horizontal: 14, vertical: 5),
+                                    child: Icon(Icons.remove, color: Colors.white, size: 16),
+                                  ),
+                                ),
+                                Text(
+                                  '$qty',
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w900,
+                                    fontSize: 13,
+                                  ),
+                                ),
+                                InkWell(
+                                  onTap: () => cartProvider.addToCart(item),
+                                  borderRadius: const BorderRadius.horizontal(right: Radius.circular(8)),
+                                  child: const Padding(
+                                    padding: EdgeInsets.symmetric(horizontal: 14, vertical: 5),
+                                    child: Icon(Icons.add, color: Colors.white, size: 16),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        },
                       ),
                     ],
                   ),
@@ -642,20 +946,44 @@ class _ProductsScreenState extends State<ProductsScreen> {
               ],
             ),
             // Favorite Icon at Top Right
-            Positioned(
-              top: 8,
-              right: 8,
-              child: Container(
-                padding: const EdgeInsets.all(5),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  shape: BoxShape.circle,
-                  boxShadow: [
-                    BoxShadow(color: Colors.black.withValues(alpha: 0.1), blurRadius: 4, offset: const Offset(0, 2))
-                  ],
-                ),
-                child: const Icon(Icons.favorite, color: Color(0xFFC2C2C2), size: 16),
-              ),
+            Consumer<WishlistProvider>(
+              builder: (context, wishlist, child) {
+                final isAdded = wishlist.isWishlisted(item.id);
+                return Positioned(
+                  top: 8,
+                  right: 8,
+                  child: GestureDetector(
+                    onTap: () {
+                      wishlist.toggleWishlist(item);
+                      ScaffoldMessenger.of(context).clearSnackBars();
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(isAdded
+                              ? '${item.title} removed from Wishlist!'
+                              : '${item.title} added to Wishlist! ❤️'),
+                          behavior: SnackBarBehavior.floating,
+                          duration: const Duration(seconds: 2),
+                        ),
+                      );
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.all(5),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        shape: BoxShape.circle,
+                        boxShadow: [
+                          BoxShadow(color: Colors.black.withValues(alpha: 0.1), blurRadius: 4, offset: const Offset(0, 2))
+                        ],
+                      ),
+                      child: Icon(
+                        isAdded ? Icons.favorite : Icons.favorite_border,
+                        color: isAdded ? Colors.red : const Color(0xFFC2C2C2),
+                        size: 16,
+                      ),
+                    ),
+                  ),
+                );
+              },
             ),
           ],
         ),
@@ -697,22 +1025,9 @@ class _ProductsScreenState extends State<ProductsScreen> {
                 height: 90,
                 color: Colors.white,
                 child: Center(
-                  child: SizedBox(
-                    width: double.infinity,
-                    height: double.infinity,
-                    child: imageUrl.isNotEmpty
-                    ? (imageUrl.startsWith('local:')
-                        ? Image.asset(
-                            'assets/images/${imageUrl.split(':')[1]}',
-                            fit: BoxFit.contain,
-                            errorBuilder: (ctx, err, stack) => const Icon(Icons.videocam, color: AppColors.primaryRed, size: 38),
-                          )
-                        : Image.network(
-                            imageUrl,
-                            fit: BoxFit.contain,
-                            errorBuilder: (ctx, err, stack) => const Icon(Icons.videocam, color: AppColors.primaryRed, size: 38),
-                          ))
-                    : const Icon(Icons.videocam, color: AppColors.primaryRed, size: 38),
+                  child: AppImage(
+                    imageUrl: item.image,
+                    fit: BoxFit.contain,
                   ),
                 ),
               ),
@@ -732,7 +1047,7 @@ class _ProductsScreenState extends State<ProductsScreen> {
                       Row(
                         children: [
                           const Icon(Icons.star, color: Colors.amber, size: 12),
-                          Text(' ${item.rating}', style: const TextStyle(fontSize: 10, color: AppColors.textSecondary)),
+                          Text(' ${item.displayRating}', style: const TextStyle(fontSize: 10, color: AppColors.textSecondary)),
                         ],
                       ),
                     ],
@@ -757,16 +1072,19 @@ class _ProductsScreenState extends State<ProductsScreen> {
                           item.formattedOriginalPrice,
                           style: const TextStyle(decoration: TextDecoration.lineThrough, fontSize: 10, color: AppColors.textMuted),
                         ),
-                      const SizedBox(width: 6),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-                        decoration: BoxDecoration(
-                          color: AppColors.primaryRedLight,
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        child: Text(
-                          item.discountTag,
-                          style: const TextStyle(color: AppColors.primaryRed, fontSize: 9, fontWeight: FontWeight.bold),
+                      Flexible(
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                          decoration: BoxDecoration(
+                            color: AppColors.primaryRedLight,
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(
+                            item.discountTag,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(color: AppColors.primaryRed, fontSize: 9, fontWeight: FontWeight.bold),
+                          ),
                         ),
                       ),
                     ],
@@ -825,85 +1143,146 @@ class _ProductsScreenState extends State<ProductsScreen> {
                   ),
                   const Divider(height: 1, thickness: 1, color: Color(0xFFF1F5F9)),
                   Expanded(
-                    child: ListView(
-                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-                      children: [
-                        const Text(
-                          'CATEGORIES',
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.bold,
-                            color: Color(0xFF94A3B8),
-                            letterSpacing: 0.8,
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                        Column(
+                    child: Builder(
+                      builder: (context) {
+                        int countFor(String query) {
+                          final q = query.toLowerCase();
+                          return _backendProducts.where((p) {
+                            final c = p.category.toLowerCase();
+                            final t = p.title.toLowerCase();
+                            return c.contains(q) || t.contains(q);
+                          }).length;
+                        }
+
+                        final ipCount = countFor('ip');
+                        final wifiCount = countFor('wifi');
+                        final ptzCount = countFor('ptz');
+                        final domeCount = countFor('dome');
+                        final bulletCount = countFor('bullet');
+                        final cctvTotal = _backendProducts.where((p) {
+                          final c = p.category.toLowerCase();
+                          final t = p.title.toLowerCase();
+                          return c.contains('camera') ||
+                              c.contains('cctv') ||
+                              c.contains('ip') ||
+                              c.contains('wifi') ||
+                              c.contains('bullet') ||
+                              c.contains('dome') ||
+                              t.contains('camera');
+                        }).length;
+
+                        final dvrCount = countFor('dvr');
+                        final nvrCount = countFor('nvr');
+                        final accCount = _backendProducts.where((p) {
+                          final c = p.category.toLowerCase();
+                          final t = p.title.toLowerCase();
+                          return c.contains('access') || c.contains('cable') || c.contains('power') || t.contains('cable') || t.contains('smps') || t.contains('power') || t.contains('accessories');
+                        }).length;
+                        final hddCount = _backendProducts.where((p) {
+                          final c = p.category.toLowerCase();
+                          final t = p.title.toLowerCase();
+                          return c.contains('hard') || c.contains('hdd') || t.contains('hard disk') || t.contains('hdd') || t.contains('terabyte');
+                        }).length;
+                        final vdpCount = countFor('door');
+
+                        return ListView(
+                          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
                           children: [
-                            InkWell(
-                              onTap: () {
-                                setModalState(() {
-                                  _isCctvExpanded = !_isCctvExpanded;
-                                });
-                              },
-                              child: Padding(
-                                padding: const EdgeInsets.symmetric(vertical: 8),
-                                child: Row(
-                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    const Text(
-                                      'CCTV Cameras',
-                                      style: TextStyle(
-                                        fontSize: 14,
-                                        fontWeight: FontWeight.bold,
-                                        color: Color(0xFF0F172A),
-                                      ),
-                                    ),
-                                    Row(
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                const Text(
+                                  'CATEGORIES',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.bold,
+                                    color: Color(0xFF94A3B8),
+                                    letterSpacing: 0.8,
+                                  ),
+                                ),
+                                if (_selectedCategory != 'All' || _selectedSubCategory != null)
+                                  TextButton(
+                                    onPressed: () {
+                                      setModalState(() {
+                                        _selectedCategory = 'All';
+                                        _selectedSubCategory = null;
+                                      });
+                                    },
+                                    child: const Text('Reset', style: TextStyle(color: AppColors.primaryRed, fontWeight: FontWeight.bold)),
+                                  ),
+                              ],
+                            ),
+                            const SizedBox(height: 12),
+                            _buildCategoryRow(setModalState, 'All Products', _backendProducts.length),
+                            const SizedBox(height: 4),
+                            Column(
+                              children: [
+                                InkWell(
+                                  onTap: () {
+                                    setModalState(() {
+                                      _isCctvExpanded = !_isCctvExpanded;
+                                    });
+                                  },
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(vertical: 8),
+                                    child: Row(
+                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                       children: [
-                                        const Text('(11)', style: TextStyle(fontSize: 12, color: Color(0xFF94A3B8))),
-                                        const SizedBox(width: 4),
-                                        Icon(
-                                          _isCctvExpanded ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down,
-                                          size: 18,
-                                          color: const Color(0xFF64748B),
+                                        const Text(
+                                          'CCTV Cameras',
+                                          style: TextStyle(
+                                            fontSize: 14,
+                                            fontWeight: FontWeight.bold,
+                                            color: Color(0xFF0F172A),
+                                          ),
+                                        ),
+                                        Row(
+                                          children: [
+                                            Text('($cctvTotal)', style: const TextStyle(fontSize: 12, color: Color(0xFF94A3B8))),
+                                            const SizedBox(width: 4),
+                                            Icon(
+                                              _isCctvExpanded ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down,
+                                              size: 18,
+                                              color: const Color(0xFF64748B),
+                                            ),
+                                          ],
                                         ),
                                       ],
                                     ),
-                                  ],
+                                  ),
                                 ),
-                              ),
-                            ),
-                            if (_isCctvExpanded)
-                              Padding(
-                                padding: const EdgeInsets.only(left: 12),
-                                child: Container(
-                                  decoration: const BoxDecoration(
-                                    border: Border(
-                                      left: BorderSide(color: Color(0xFFFECDD3), width: 2),
+                                if (_isCctvExpanded)
+                                  Padding(
+                                    padding: const EdgeInsets.only(left: 12),
+                                    child: Container(
+                                      decoration: const BoxDecoration(
+                                        border: Border(
+                                          left: BorderSide(color: Color(0xFFFECDD3), width: 2),
+                                        ),
+                                      ),
+                                      padding: const EdgeInsets.only(left: 12),
+                                      child: Column(
+                                        children: [
+                                          _buildSubCategoryItem(setModalState, 'IP Cameras', ipCount),
+                                          _buildSubCategoryItem(setModalState, 'WiFi Cameras', wifiCount),
+                                          _buildSubCategoryItem(setModalState, 'PTZ Cameras', ptzCount),
+                                          _buildSubCategoryItem(setModalState, 'Dome Cameras', domeCount),
+                                          _buildSubCategoryItem(setModalState, 'Bullet Cameras', bulletCount),
+                                        ],
+                                      ),
                                     ),
                                   ),
-                                  padding: const EdgeInsets.only(left: 12),
-                                  child: Column(
-                                    children: [
-                                      _buildSubCategoryItem(setModalState, 'IP Cameras', 6),
-                                      _buildSubCategoryItem(setModalState, 'WiFi Cameras', 0),
-                                      _buildSubCategoryItem(setModalState, 'PTZ Cameras', 0),
-                                      _buildSubCategoryItem(setModalState, 'Dome Cameras', 0),
-                                      _buildSubCategoryItem(setModalState, 'Bullet Cameras', 4),
-                                    ],
-                                  ),
-                                ),
-                              ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            _buildCategoryRow(setModalState, 'DVR', dvrCount),
+                            _buildCategoryRow(setModalState, 'NVR', nvrCount),
+                            _buildCategoryRow(setModalState, 'Accessories', accCount),
+                            _buildCategoryRow(setModalState, 'Hard Disk', hddCount),
+                            _buildCategoryRow(setModalState, 'Video Door Phone', vdpCount),
                           ],
-                        ),
-                        const SizedBox(height: 8),
-                        _buildCategoryRow(setModalState, 'DVR', 2),
-                        _buildCategoryRow(setModalState, 'NVR', 4),
-                        _buildCategoryRow(setModalState, 'Accessories', 6),
-                        _buildCategoryRow(setModalState, 'Hard Disk', 3),
-                        _buildCategoryRow(setModalState, 'Video Door Phone', 0),
-                      ],
+                        );
+                      },
                     ),
                   ),
                   Container(
@@ -1080,9 +1459,31 @@ class _ProductsScreenState extends State<ProductsScreen> {
     );
   }
 
+  String _normalizeBrandName(String raw) {
+    final trimmed = raw.trim();
+    if (trimmed.isEmpty) return '';
+    final upper = trimmed.toUpperCase().replaceAll('-', ' ').replaceAll(RegExp(r'\s+'), ' ');
+    if (upper == 'CP PLUS' || upper == 'CPPLUS') return 'CP PLUS';
+    if (upper == 'TRUE VIEW' || upper == 'TRUEVIEW') return 'Trueview';
+    if (upper == 'HIK VISION' || upper == 'HIKVISION') return 'Hikvision';
+    if (upper == 'DAHUA' || upper == 'DA HUA') return 'Dahua';
+    if (upper == 'EZVIZ') return 'EZVIZ';
+    if (upper == 'IMOU') return 'Imou';
+    if (upper == 'UNV' || upper == 'UNIVIEW') return 'UNV';
+    if (upper == 'TP LINK' || upper == 'TPLINK') return 'TP-Link';
+    if (upper == 'CONSISTENT') return 'Consistent';
+    return trimmed.split(' ').map((w) => w.isNotEmpty ? '${w[0].toUpperCase()}${w.substring(1).toLowerCase()}' : '').join(' ');
+  }
+
   void _showBrandBottomSheet(BuildContext context) {
-    final allBrands = _backendProducts.isNotEmpty ? _backendProducts.map((p) => p.brand).toSet().toList() : _fallbackProducts.map((p) => p['brand'].toString()).toSet().toList();
-    allBrands.sort();
+    final Map<String, int> brandCounts = {};
+    for (final p in _backendProducts) {
+      final b = _normalizeBrandName(p.brand);
+      if (b.isNotEmpty) {
+        brandCounts[b] = (brandCounts[b] ?? 0) + 1;
+      }
+    }
+    final allBrands = brandCounts.keys.toList()..sort();
 
     showModalBottomSheet(
       context: context,
@@ -1094,7 +1495,7 @@ class _ProductsScreenState extends State<ProductsScreen> {
           builder: (context, setModalState) {
             return Container(
               padding: const EdgeInsets.symmetric(vertical: 20),
-              constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.6),
+              constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.65),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -1113,20 +1514,28 @@ class _ProductsScreenState extends State<ProductsScreen> {
                               });
                               setState(() {});
                             },
-                            child: const Text('Clear', style: TextStyle(color: AppColors.primaryRed)),
+                            child: const Text('Clear All', style: TextStyle(color: AppColors.primaryRed, fontWeight: FontWeight.bold)),
                           )
                       ],
                     ),
                   ),
+                  const Divider(height: 1, color: Color(0xFFE2E8F0)),
                   Expanded(
                     child: ListView.builder(
                       itemCount: allBrands.length,
                       itemBuilder: (context, index) {
                         final brand = allBrands[index];
+                        final count = brandCounts[brand] ?? 0;
                         final isSelected = _selectedBrands.contains(brand);
                         return CheckboxListTile(
                           value: isSelected,
-                          title: Text(brand),
+                          title: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(brand, style: TextStyle(fontWeight: isSelected ? FontWeight.bold : FontWeight.normal)),
+                              Text('($count)', style: const TextStyle(color: AppColors.textMuted, fontSize: 12)),
+                            ],
+                          ),
                           activeColor: AppColors.primaryRed,
                           controlAffinity: ListTileControlAffinity.leading,
                           onChanged: (val) {
@@ -1143,10 +1552,29 @@ class _ProductsScreenState extends State<ProductsScreen> {
                       },
                     ),
                   ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                    child: SizedBox(
+                      width: double.infinity,
+                      height: 48,
+                      child: ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.primaryRed,
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+                        ),
+                        onPressed: () => Navigator.pop(context),
+                        child: Text(
+                          _selectedBrands.isEmpty ? 'View All Brands' : 'Apply (${_selectedBrands.length} Selected)',
+                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                        ),
+                      ),
+                    ),
+                  ),
                 ],
               ),
             );
-          }
+          },
         );
       },
     );
@@ -1181,36 +1609,50 @@ class _ProductsScreenState extends State<ProductsScreen> {
                                 _selectedMinRating = 0.0;
                               });
                               setState(() {});
+                              Navigator.pop(context);
                             },
-                            child: const Text('Clear', style: TextStyle(color: AppColors.primaryRed)),
+                            child: const Text('Reset', style: TextStyle(color: AppColors.primaryRed, fontWeight: FontWeight.bold)),
                           )
                       ],
                     ),
                   ),
+                  const Divider(height: 1, color: Color(0xFFE2E8F0)),
                   ...ratings.map((rating) {
-                    return RadioListTile<double>(
-                      value: rating,
-                      groupValue: _selectedMinRating,
-                      title: Row(
-                        children: [
-                          Text('${rating.toInt()} & above', style: const TextStyle(fontSize: 15)),
-                          const SizedBox(width: 4),
-                          const Icon(Icons.star, size: 16, color: Colors.amber),
-                        ],
-                      ),
-                      activeColor: AppColors.primaryRed,
-                      onChanged: (val) {
-                        setModalState(() {
-                          _selectedMinRating = val ?? 0.0;
+                    final isSelected = _selectedMinRating == rating;
+                    return InkWell(
+                      onTap: () {
+                        setState(() {
+                          _selectedMinRating = rating;
                         });
-                        setState(() {});
+                        Navigator.pop(context);
                       },
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                        child: Row(
+                          children: [
+                            Icon(
+                              isSelected ? Icons.radio_button_checked : Icons.radio_button_off,
+                              color: isSelected ? AppColors.primaryRed : const Color(0xFF94A3B8),
+                              size: 20,
+                            ),
+                            const SizedBox(width: 12),
+                            Text('${rating.toInt()}★ & above', style: TextStyle(fontSize: 15, fontWeight: isSelected ? FontWeight.bold : FontWeight.normal)),
+                            const SizedBox(width: 6),
+                            Row(
+                              children: List.generate(
+                                rating.toInt(),
+                                (i) => const Icon(Icons.star, size: 15, color: Colors.amber),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
                     );
                   }).toList(),
                 ],
               ),
             );
-          }
+          },
         );
       },
     );

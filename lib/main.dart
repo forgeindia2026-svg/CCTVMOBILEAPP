@@ -3,6 +3,8 @@ import 'package:provider/provider.dart';
 import 'core/services/notification_service.dart';
 import 'core/theme/app_theme.dart';
 import 'core/providers/cart_provider.dart';
+import 'core/providers/wishlist_provider.dart';
+import 'core/providers/language_provider.dart';
 import 'features/navigation/main_navigation_screen.dart';
 
 final GlobalKey<ScaffoldMessengerState> scaffoldMessengerKey =
@@ -33,6 +35,8 @@ class _CCTVCustomerAppState extends State<CCTVCustomerApp> {
     return MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => CartProvider()),
+        ChangeNotifierProvider(create: (_) => WishlistProvider()),
+        ChangeNotifierProvider(create: (_) => LanguageProvider()),
       ],
       child: MaterialApp(
         scaffoldMessengerKey: scaffoldMessengerKey,

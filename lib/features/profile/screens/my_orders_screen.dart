@@ -239,11 +239,17 @@ class _MyOrdersScreenState extends State<MyOrdersScreen> {
                       height: 44,
                       color: AppColors.surfaceSecondary,
                       child: imageUrl.isNotEmpty
-                          ? Image.network(
-                              imageUrl,
-                              fit: BoxFit.cover,
-                              errorBuilder: (ctx, err, stack) => const Icon(Icons.videocam, color: AppColors.primaryRed, size: 22),
-                            )
+                          ? (imageUrl.startsWith('local:')
+                              ? Image.asset(
+                                  'assets/images/${imageUrl.split(':')[1]}',
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (ctx, err, stack) => const Icon(Icons.videocam, color: AppColors.primaryRed, size: 22),
+                                )
+                              : Image.network(
+                                  imageUrl,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (ctx, err, stack) => const Icon(Icons.videocam, color: AppColors.primaryRed, size: 22),
+                                ))
                           : const Icon(Icons.videocam, color: AppColors.primaryRed, size: 22),
                     ),
                   ),

@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../../../core/constants/app_colors.dart';
+import '../../../core/providers/language_provider.dart';
 import '../../booking/screens/book_installation_screen.dart';
 
 class InstallationServiceScreen extends StatelessWidget {
@@ -7,9 +9,11 @@ class InstallationServiceScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final lang = Provider.of<LanguageProvider>(context);
+
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Installation Service'),
+        title: Text(lang.tr('installation_service')),
       ),
       body: SafeArea(
         child: Column(
@@ -35,19 +39,19 @@ class InstallationServiceScreen extends StatelessWidget {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text(
-                            'Professional\nInstallation',
-                            style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold, height: 1.1),
+                          Text(
+                            lang.tr('professional_installation'),
+                            style: const TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold, height: 1.1),
                           ),
                           const SizedBox(height: 4),
-                          const Text('Done by Experts', style: TextStyle(color: Colors.white70, fontSize: 13)),
+                          Text(lang.tr('done_by_experts'), style: const TextStyle(color: Colors.white70, fontSize: 13)),
 
                           const SizedBox(height: 16),
 
-                          _buildCheckItem('Trained & Certified Technicians'),
-                          _buildCheckItem('Neat & Professional Wiring'),
-                          _buildCheckItem('Satisfaction Guaranteed'),
-                          _buildCheckItem('On-Time Service'),
+                          _buildCheckItem(lang.tr('expert_technicians')),
+                          _buildCheckItem(lang.tr('neat_wiring')),
+                          _buildCheckItem(lang.tr('satisfaction_guaranteed')),
+                          _buildCheckItem(lang.tr('on_time_service')),
                         ],
                       ),
                     ),
@@ -55,25 +59,25 @@ class InstallationServiceScreen extends StatelessWidget {
                     const SizedBox(height: 24),
 
                     // Our Services List Section
-                    Text('Our Services', style: Theme.of(context).textTheme.titleMedium),
+                    Text(lang.tr('our_services'), style: Theme.of(context).textTheme.titleMedium),
                     const SizedBox(height: 12),
 
                     _buildServiceTile(
                       context,
-                      title: 'CCTV Installation',
-                      subtitle: 'Starting from ₹499',
+                      title: lang.tr('cctv_installation_title'),
+                      subtitle: '${lang.tr('starting_from')} ₹499',
                       icon: Icons.videocam_outlined,
                     ),
                     _buildServiceTile(
                       context,
-                      title: 'CCTV Repair & Maintenance',
-                      subtitle: 'Starting from ₹299',
+                      title: lang.tr('cctv_repair_title'),
+                      subtitle: '${lang.tr('starting_from')} ₹299',
                       icon: Icons.build_outlined,
                     ),
                     _buildServiceTile(
                       context,
-                      title: 'AMC Service',
-                      subtitle: 'Starting from ₹998/year',
+                      title: lang.tr('amc_service_title'),
+                      subtitle: '${lang.tr('starting_from')} ₹998/year',
                       icon: Icons.verified_outlined,
                     ),
                     _buildServiceTile(
@@ -104,7 +108,7 @@ class InstallationServiceScreen extends StatelessWidget {
                       MaterialPageRoute(builder: (context) => const BookInstallationScreen()),
                     );
                   },
-                  child: const Text('Book Installation'),
+                  child: Text(lang.tr('book_installation')),
                 ),
               ),
             ),
@@ -137,31 +141,32 @@ class InstallationServiceScreen extends StatelessWidget {
           side: const BorderSide(color: AppColors.borderLight),
         ),
         child: ListTile(
-        onTap: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(builder: (context) => const BookInstallationScreen()),
-          );
-        },
-        leading: Container(
-          padding: const EdgeInsets.all(10),
-          decoration: const BoxDecoration(
-            color: AppColors.surfaceSecondary,
-            shape: BoxShape.circle,
+          onTap: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => BookInstallationScreen(initialServiceType: title),
+              ),
+            );
+          },
+          leading: Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF1F5F9),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(icon, color: AppColors.primaryRed),
           ),
-          child: Icon(icon, color: AppColors.primaryRed, size: 22),
-        ),
-        title: Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-        subtitle: Text(
-          subtitle,
-          style: TextStyle(
-            color: isFree ? AppColors.statusGreen : AppColors.textSecondary,
-            fontWeight: isFree ? FontWeight.bold : FontWeight.normal,
-            fontSize: 12,
+          title: Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
+          subtitle: Text(
+            subtitle,
+            style: TextStyle(
+              color: isFree ? AppColors.statusGreen : AppColors.textSecondary,
+              fontWeight: isFree ? FontWeight.bold : FontWeight.normal,
+            ),
           ),
+          trailing: const Icon(Icons.chevron_right, color: AppColors.textMuted),
         ),
-        trailing: const Icon(Icons.chevron_right, size: 18, color: AppColors.textMuted),
-      ),
       ),
     );
   }

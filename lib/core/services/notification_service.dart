@@ -16,7 +16,7 @@ class NotificationService {
     final userEmail = await StorageService.getUserEmail();
     
     // Choose active backend socket server address
-    final socketUrl = kIsWeb ? 'http://localhost:5000' : 'http://10.10.101.68:5000';
+    final socketUrl = 'https://65.0.45.64.sslip.io';
 
     try {
       _socket?.dispose();

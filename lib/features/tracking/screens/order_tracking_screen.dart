@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/models/order_model.dart';
+import '../../../core/providers/language_provider.dart';
 import '../../../core/services/api_service.dart';
 import '../../../core/services/storage_service.dart';
 import '../../auth/screens/login_screen.dart';
@@ -65,6 +67,7 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final lang = Provider.of<LanguageProvider>(context);
     final hasOrders = _liveOrders.isNotEmpty;
     final currentOrder = hasOrders && _selectedIndex < _liveOrders.length
         ? _liveOrders[_selectedIndex]
@@ -79,7 +82,7 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen> {
         backgroundColor: Colors.white,
         elevation: 0.5,
         title: Text(
-          _isLoggedIn ? 'Welcome back, ${_userDisplayName.toLowerCase()}! 👋' : 'Order Tracking',
+          _isLoggedIn ? 'Welcome back, ${_userDisplayName.toLowerCase()}! 👋' : lang.tr('order_tracking'),
           style: const TextStyle(
             fontWeight: FontWeight.bold,
             fontSize: 16,
@@ -109,7 +112,7 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen> {
                       children: [
                         Expanded(
                           child: _buildStatCard(
-                            title: 'TOTAL ORDERS',
+                            title: lang.tr('total_orders'),
                             count: '${_liveOrders.length}',
                             icon: Icons.shopping_bag_outlined,
                             iconBg: const Color(0xFFFFF1F2),
@@ -119,7 +122,7 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen> {
                         const SizedBox(width: 10),
                         Expanded(
                           child: _buildStatCard(
-                            title: 'IN PROGRESS',
+                            title: lang.tr('in_progress'),
                             count: '$inProgressCount',
                             icon: Icons.local_shipping_outlined,
                             iconBg: const Color(0xFFF0FDF4),
@@ -133,7 +136,7 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen> {
                       children: [
                         Expanded(
                           child: _buildStatCard(
-                            title: 'COMPLETED',
+                            title: lang.tr('completed'),
                             count: '$completedCount',
                             icon: Icons.check_circle_outline,
                             iconBg: const Color(0xFFFEF3C7),
@@ -143,7 +146,7 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen> {
                         const SizedBox(width: 10),
                         Expanded(
                           child: _buildStatCard(
-                            title: 'ACTIVE AMC',
+                            title: lang.tr('active_amc'),
                             count: _isLoggedIn ? '1' : '0',
                             icon: Icons.star_outline,
                             iconBg: const Color(0xFFF3E8FF),
@@ -169,14 +172,14 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen> {
                           children: [
                             const Icon(Icons.account_circle_outlined, size: 54, color: AppColors.primaryRed),
                             const SizedBox(height: 12),
-                            const Text(
-                              'Log In to View Your Orders',
-                              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Color(0xFF0F172A)),
+                            Text(
+                              lang.tr('login_view_orders'),
+                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Color(0xFF0F172A)),
                             ),
                             const SizedBox(height: 4),
-                            const Text(
-                              'Please log in to your account to view your live orders and technician tracking timeline.',
-                              style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                            Text(
+                              lang.tr('login_track_desc'),
+                              style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
                               textAlign: TextAlign.center,
                             ),
                             const SizedBox(height: 16),
@@ -197,7 +200,7 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen> {
                                   _loadLiveOrders();
                                 },
                                 icon: const Icon(Icons.login, size: 18),
-                                label: const Text('Log In / Sign Up', style: TextStyle(fontWeight: FontWeight.bold)),
+                                label: Text(lang.tr('login_signup'), style: const TextStyle(fontWeight: FontWeight.bold)),
                               ),
                             ),
                           ],
@@ -441,14 +444,17 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('Customer: ${order.customerName}', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF0F172A))),
-                  const SizedBox(height: 2),
-                  Text('Address: ${order.shippingAddress}', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11, color: AppColors.textSecondary)),
-                ],
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Customer: ${order.customerName}', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF0F172A))),
+                    const SizedBox(height: 2),
+                    Text('Address: ${order.shippingAddress}', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11, color: AppColors.textSecondary)),
+                  ],
+                ),
               ),
+              const SizedBox(width: 12),
               Text(
                 order.formattedTotal,
                 style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: AppColors.primaryRed),
@@ -491,7 +497,7 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen> {
           ),
           _buildTimelineStep(
             title: 'Order Approved',
-            subtitle: 'Payment verified & dispatched to technical team',
+            subtitle: 'Order verified & dispatched to technical team',
             isCompleted: true,
           ),
           _buildTimelineStep(
@@ -550,13 +556,17 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen> {
                     height: 54,
                     color: AppColors.surfaceSecondary,
                     child: imageUrl.isNotEmpty
-                        ? Image.network(
-                            imageUrl,
-                            fit: BoxFit.cover,
-                            errorBuilder: (ctx, err, stack) {
-                              return const Icon(Icons.videocam, color: AppColors.primaryRed, size: 28);
-                            },
-                          )
+                        ? (imageUrl.startsWith('local:')
+                            ? Image.asset(
+                                'assets/images/${imageUrl.split(':')[1]}',
+                                fit: BoxFit.cover,
+                                errorBuilder: (ctx, err, stack) => const Icon(Icons.videocam, color: AppColors.primaryRed, size: 28),
+                              )
+                            : Image.network(
+                                imageUrl,
+                                fit: BoxFit.cover,
+                                errorBuilder: (ctx, err, stack) => const Icon(Icons.videocam, color: AppColors.primaryRed, size: 28),
+                              ))
                         : const Icon(Icons.videocam, color: AppColors.primaryRed, size: 28),
                   ),
                 ),

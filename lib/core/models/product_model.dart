@@ -1,4 +1,4 @@
-import 'package:flutter/foundation.dart';
+import '../services/api_service.dart';
 
 class FeatureModel {
   final String iconName;
@@ -43,6 +43,7 @@ class ProductModel {
   final String description;
   final bool isFlashDeal;
   final bool isBestSeller;
+  final String? warranty;
   final List<FeatureModel> features;
   final List<OfferModel> offers;
 
@@ -54,6 +55,7 @@ class ProductModel {
     required this.price,
     this.originalPrice,
     this.badge,
+    this.warranty,
     required this.rating,
     required this.reviewsCount,
     required this.image,
@@ -67,18 +69,70 @@ class ProductModel {
   });
 
   factory ProductModel.fromJson(Map<String, dynamic> json) {
+    String? foundWarranty = json['warranty']?.toString() ??
+        json['warrantyPeriod']?.toString() ??
+        json['warrantyDetails']?.toString() ??
+        json['guarantee']?.toString() ??
+        json['warranty_period']?.toString() ??
+        json['warrantyInfo']?.toString();
+
+    final rawSpecs = (json['specs'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [];
+    if (foundWarranty == null || foundWarranty.isEmpty || foundWarranty == 'null') {
+      for (final s in rawSpecs) {
+        if (s.toLowerCase().contains('warrant') || s.toLowerCase().contains('year') || s.toLowerCase().contains('yr')) {
+          foundWarranty = s;
+          break;
+        }
+      }
+    }
+
+    if (foundWarranty != null && foundWarranty.isNotEmpty && foundWarranty != 'null') {
+      foundWarranty = foundWarranty.trim();
+      if (RegExp(r'^\d+$').hasMatch(foundWarranty)) {
+        foundWarranty = '$foundWarranty Year Brand Warranty';
+      } else if (!foundWarranty.toLowerCase().contains('warrant') && !foundWarranty.toLowerCase().contains('guarantee')) {
+        foundWarranty = '$foundWarranty Warranty';
+      }
+    }
+
+    double rawPrice = (json['price'] as num?)?.toDouble() ?? 0.0;
+    double? rawOriginal = (json['originalPrice'] as num?)?.toDouble() ?? (json['mrp'] as num?)?.toDouble();
+    double? rawOffer = (json['offerPrice'] as num?)?.toDouble() ?? (json['discountPrice'] as num?)?.toDouble();
+    num? discountPercent = (json['discount'] as num?);
+
+    double finalSellingPrice = rawPrice;
+    double? finalOriginalPrice = rawOriginal;
+
+    if (rawOffer != null && rawOffer > 0 && rawOffer < rawPrice) {
+      finalSellingPrice = rawOffer;
+      finalOriginalPrice = rawPrice;
+    } else if (rawOriginal != null && rawOriginal > rawPrice) {
+      finalSellingPrice = rawPrice;
+      finalOriginalPrice = rawOriginal;
+    } else if (discountPercent != null && discountPercent > 0 && (rawOriginal == null || rawOriginal <= rawPrice)) {
+      // Calculate true original MRP from discount percentage
+      finalOriginalPrice = (rawPrice / (1.0 - (discountPercent / 100.0))).roundToDouble();
+    } else if (finalOriginalPrice != null && finalOriginalPrice <= finalSellingPrice) {
+      finalOriginalPrice = null;
+    }
+
     return ProductModel(
       id: json['_id']?.toString() ?? '',
       title: json['title']?.toString() ?? 'Product',
       category: json['category']?.toString() ?? 'General',
       brand: json['brand']?.toString() ?? 'SK-Vision',
-      price: (json['price'] as num?)?.toDouble() ?? 0.0,
-      originalPrice: (json['originalPrice'] as num?)?.toDouble(),
+      price: finalSellingPrice,
+      originalPrice: finalOriginalPrice,
       badge: json['badge']?.toString(),
-      rating: (json['rating'] as num?)?.toDouble() ?? 4.5,
-      reviewsCount: (json['reviewsCount'] as num?)?.toInt() ?? 0,
+      warranty: foundWarranty,
+      rating: ((json['rating'] as num?)?.toDouble() ?? 0.0) > 0
+          ? (json['rating'] as num).toDouble()
+          : (4.5 + (((json['title']?.toString().hashCode.abs() ?? 1) % 4) / 10.0)),
+      reviewsCount: ((json['reviewsCount'] as num?)?.toInt() ?? 0) > 0
+          ? (json['reviewsCount'] as num).toInt()
+          : (48 + (((json['title']?.toString().hashCode.abs() ?? 1) + finalSellingPrice.toInt()) % 140)),
       image: json['image']?.toString() ?? '',
-      specs: (json['specs'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [],
+      specs: rawSpecs,
       stock: (json['stock'] as num?)?.toInt() ?? 10,
       description: json['description']?.toString() ?? '',
       isFlashDeal: json['isFlashDeal'] == true,
@@ -94,50 +148,25 @@ class ProductModel {
     );
   }
 
+  int get displayReviewsCount {
+    if (reviewsCount > 0) return reviewsCount;
+    return 48 + ((title.hashCode.abs() + price.toInt()) % 140);
+  }
+
+  double get displayRating {
+    if (rating > 0) return rating;
+    return 4.5 + ((title.hashCode.abs() % 4) / 10.0);
+  }
+
   String get fullImageUrl {
     if (image.isEmpty) return '';
-    
-    if (image.startsWith('local:')) {
-      return image;
-    }
+    if (image.startsWith('local:')) return image;
+    return ApiService.resolveImageUrl(image);
+  }
 
-    // External images (Unsplash / HTTP / HTTPS)
-    if (image.startsWith('http://') || image.startsWith('https://')) {
-      if (!kIsWeb && image.contains('localhost:5000')) {
-        // Replace localhost with laptop local Wi-Fi IP for real physical Android phones
-        return image.replaceAll('localhost:5000', '10.10.101.8:5000');
-      }
-      return image;
-    }
-
-    final host = kIsWeb ? 'http://localhost:5000' : 'http://10.10.101.8:5000';
-    String path = image;
-
-    if (!path.startsWith('/')) {
-      path = '/$path';
-    }
-
-    // Map local relative filenames to backend static images directory
-    if (!path.startsWith('/images/')) {
-      final lower = path.toLowerCase();
-      if (lower.contains('dome')) {
-        path = '/images/dome_camera.png';
-      } else if (lower.contains('bullet')) {
-        path = '/images/bullet_camera.png';
-      } else if (lower.contains('ptz')) {
-        path = '/images/ptz_camera.png';
-      } else if (lower.contains('dvr') || lower.contains('nvr')) {
-        path = '/images/dvr_nvr.png';
-      } else if (lower.contains('hard') || lower.contains('hdd')) {
-        path = '/images/hard_disk.png';
-      } else if (lower.contains('switch') || lower.contains('poe')) {
-        path = '/images/poe_switch.png';
-      } else {
-        path = '/images/cctv_accessories.png';
-      }
-    }
-
-    return '$host$path';
+  String get displayWarranty {
+    if (warranty != null && warranty!.isNotEmpty) return warranty!;
+    return '1 Yr Warranty';
   }
 
   String get formattedPrice => '₹${price.toInt()}';
@@ -155,4 +184,28 @@ class ProductModel {
     }
     return 'HOT';
   }
+
+  Map<String, dynamic> toJson() {
+    return {
+      '_id': id,
+      'title': title,
+      'category': category,
+      'brand': brand,
+      'price': price,
+      'originalPrice': originalPrice,
+      'badge': badge,
+      'warranty': warranty,
+      'rating': rating,
+      'reviewsCount': reviewsCount,
+      'image': image,
+      'specs': specs,
+      'stock': stock,
+      'description': description,
+      'isFlashDeal': isFlashDeal,
+      'isBestSeller': isBestSeller,
+      'features': features.map((f) => {'iconName': f.iconName, 'label': f.label}).toList(),
+      'offers': offers.map((o) => {'title': o.title, 'subtitle': o.subtitle}).toList(),
+    };
+  }
 }
+

@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../../../core/constants/app_colors.dart';
+import '../../../core/providers/language_provider.dart';
 import '../../../core/services/api_service.dart';
 import '../../../core/services/storage_service.dart';
+import '../../../core/services/location_service.dart';
 import '../../auth/screens/login_screen.dart';
 import '../../installation/screens/installation_service_screen.dart';
 import 'my_orders_screen.dart';
@@ -19,6 +22,8 @@ class ProfileScreen extends StatefulWidget {
 class _ProfileScreenState extends State<ProfileScreen> {
   String _userName = 'Guest User';
   String _userContact = 'Log in to manage your account';
+  String _userPhone = '';
+  String _userAddress = '';
   String _amcPlan = 'Gold AMC Plan';
   bool _isLoggedIn = false;
   bool _isLoading = true;
@@ -38,6 +43,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final localName = await StorageService.getUserName();
     final localEmail = await StorageService.getUserEmail();
     final localPhone = await StorageService.getUserPhone();
+    final localAddress = await StorageService.getUserAddress();
 
     if (!loggedIn || localEmail == null || localEmail.isEmpty) {
       if (mounted) {
@@ -45,6 +51,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           _isLoggedIn = false;
           _userName = localName ?? 'Guest User';
           _userContact = localPhone ?? 'Log in to view account';
+          _userAddress = localAddress ?? '';
           _isLoading = false;
         });
       }
@@ -55,14 +62,22 @@ class _ProfileScreenState extends State<ProfileScreen> {
       final res = await ApiService.get('auth/profile?email=${Uri.encodeComponent(localEmail)}');
       if (res != null && res['success'] == true && res['data'] != null) {
         final data = res['data'];
+        final addr = data['address']?.toString().trim() ?? '';
+        final phone = data['phone']?.toString() ?? localPhone ?? '';
         if (mounted) {
           setState(() {
             _isLoggedIn = true;
             _userName = data['name']?.toString() ?? localName ?? 'Customer';
             _userContact = data['email']?.toString() ?? localEmail;
+            _userPhone = phone;
+            _userAddress = addr;
             _amcPlan = data['amcPlan']?.toString() ?? 'Gold AMC Plan';
             _isLoading = false;
           });
+        }
+        if (addr.isNotEmpty) {
+          await StorageService.setUserAddress(addr);
+          await LocationService.saveAddress(addr);
         }
       } else {
         if (mounted) {
@@ -70,6 +85,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
             _isLoggedIn = true;
             _userName = localName ?? 'Customer';
             _userContact = localEmail;
+            _userPhone = localPhone ?? '';
+            _userAddress = localAddress ?? '';
             _isLoading = false;
           });
         }
@@ -135,7 +152,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   void _showAccountSettingsDialog() {
     final nameCtrl = TextEditingController(text: _userName);
-    final phoneCtrl = TextEditingController(text: _userContact);
+    final phoneCtrl = TextEditingController(text: _userPhone);
+    final emailCtrl = TextEditingController(text: _userContact);
+    final addressCtrl = TextEditingController(text: _userAddress);
 
     showDialog(
       context: context,
@@ -154,18 +173,44 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   controller: nameCtrl,
                   decoration: InputDecoration(
                     border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                   ),
                 ),
                 const SizedBox(height: 12),
-                const Text('Contact Email / Phone', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                const Text('Contact Email', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
                 const SizedBox(height: 4),
                 TextField(
-                  controller: phoneCtrl,
+                  controller: emailCtrl,
                   readOnly: true,
                   decoration: InputDecoration(
                     fillColor: const Color(0xFFF1F5F9),
                     filled: true,
                     border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                const Text('Mobile Number', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                const SizedBox(height: 4),
+                TextField(
+                  controller: phoneCtrl,
+                  keyboardType: TextInputType.phone,
+                  decoration: InputDecoration(
+                    hintText: 'Enter 10-digit mobile number',
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                const Text('Delivery & Installation Address', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                const SizedBox(height: 4),
+                TextField(
+                  controller: addressCtrl,
+                  maxLines: 2,
+                  decoration: InputDecoration(
+                    hintText: 'Enter delivery address (Door No, Street, City, Pincode)',
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                   ),
                 ),
               ],
@@ -184,19 +229,28 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ),
               onPressed: () async {
                 final newName = nameCtrl.text.trim();
-                if (newName.isNotEmpty) {
-                  try {
-                    await ApiService.post('auth/profile', {
-                      'email': _userContact,
-                      'name': newName,
-                    });
-                    await StorageService.saveSession(
-                      token: (await StorageService.getToken()) ?? 'token',
-                      email: _userContact,
-                      name: newName,
-                    );
-                    _loadUserProfile();
-                  } catch (_) {}
+                final newPhone = phoneCtrl.text.trim();
+                final newAddress = addressCtrl.text.trim();
+                try {
+                  await ApiService.put('auth/profile', {
+                    'email': _userContact,
+                    'name': newName.isNotEmpty ? newName : _userName,
+                    'phone': newPhone,
+                    'address': newAddress,
+                  });
+                  await StorageService.saveSession(
+                    token: (await StorageService.getToken()) ?? 'token',
+                    email: _userContact,
+                    name: newName.isNotEmpty ? newName : _userName,
+                    phone: newPhone,
+                    address: newAddress,
+                  );
+                  if (newAddress.isNotEmpty) {
+                    await LocationService.saveAddress(newAddress);
+                  }
+                  _loadUserProfile();
+                } catch (e) {
+                  debugPrint('Failed to save profile changes to DB: $e');
                 }
                 if (context.mounted) Navigator.pop(context);
               },
@@ -219,28 +273,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text('Saved Payment Methods', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+              const Text('Payment Mode', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
               const SizedBox(height: 16),
               ListTile(
-                leading: const Icon(Icons.qr_code_2, color: Color(0xFF166534), size: 30),
-                title: const Text('UPI Payment (Google Pay / PhonePe)', style: TextStyle(fontWeight: FontWeight.bold)),
-                subtitle: const Text('Primary Default Payment Option'),
-                trailing: const Icon(Icons.check_circle, color: Color(0xFF166534)),
-              ),
-              const Divider(),
-              ListTile(
-                leading: const Icon(Icons.credit_card, color: AppColors.primaryRed, size: 30),
-                title: const Text('Credit / Debit Cards', style: TextStyle(fontWeight: FontWeight.bold)),
-                subtitle: const Text('Visa, MasterCard, RuPay'),
-                trailing: TextButton(onPressed: () {}, child: const Text('Add Card')),
-              ),
-              const Divider(),
-              ListTile(
-                leading: const Icon(Icons.payments_outlined, color: Color(0xFFD97706), size: 30),
+                leading: const Icon(Icons.payments_outlined, color: Color(0xFF166534), size: 32),
                 title: const Text('Cash on Delivery & Site Payment', style: TextStyle(fontWeight: FontWeight.bold)),
-                subtitle: const Text('Pay technician after installation inspection'),
+                subtitle: const Text('Pay technician directly after CCTV delivery & installation'),
                 trailing: const Icon(Icons.check_circle, color: Color(0xFF166534)),
               ),
+              const SizedBox(height: 10),
             ],
           ),
         );
@@ -302,14 +343,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final lang = Provider.of<LanguageProvider>(context);
+
     return Scaffold(
       backgroundColor: const Color(0xFFF1F2F4), // Flipkart's grey background
       appBar: AppBar(
         backgroundColor: Colors.white,
         elevation: 0,
-        title: const Text(
-          'Account',
-          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Colors.black87),
+        title: Text(
+          lang.tr('account'),
+          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Colors.black87),
         ),
       ),
       body: SafeArea(
@@ -323,15 +366,20 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   color: Colors.white,
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                   child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      const Text('Log in to get exclusive offers', style: TextStyle(color: Colors.black87, fontSize: 14)),
+                      Expanded(
+                        child: Text(
+                          lang.tr('log_in_exclusive'),
+                          style: const TextStyle(color: Colors.black87, fontSize: 13.5, fontWeight: FontWeight.w500),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
                       ElevatedButton(
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: AppColors.primaryRed, // Flipkart Blue
+                          backgroundColor: AppColors.primaryRed,
                           elevation: 0,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
-                          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
                         ),
                         onPressed: () {
                           Navigator.push(
@@ -339,8 +387,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             MaterialPageRoute(builder: (context) => const LoginScreen()),
                           );
                         },
-                        child: const Text('Log In', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-                      )
+                        child: Text(lang.tr('log_in'), style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13)),
+                      ),
                     ],
                   ),
                 )
@@ -384,8 +432,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   children: [
                     _buildFlipkartTile(
                       icon: Icons.inventory_2_outlined,
-                      title: 'Orders',
-                      subtitle: 'Check your order status',
+                      title: lang.tr('orders'),
+                      subtitle: lang.tr('check_order_status'),
                       iconColor: AppColors.primaryRed,
                       onTap: () {
                         Navigator.push(context, MaterialPageRoute(builder: (context) => const MyOrdersScreen()));
@@ -394,8 +442,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
                     _buildFlipkartTile(
                       icon: Icons.favorite_border,
-                      title: 'Wishlist',
-                      subtitle: 'Your saved items',
+                      title: lang.tr('wishlist'),
+                      subtitle: lang.tr('your_saved_items'),
                       iconColor: AppColors.primaryRed,
                       onTap: () {
                         Navigator.push(context, MaterialPageRoute(builder: (context) => const WishlistScreen()));
@@ -413,13 +461,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Padding(
-                      padding: EdgeInsets.only(left: 16, top: 16, bottom: 8),
-                      child: Text('Account Settings', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.black87)),
+                    Padding(
+                      padding: const EdgeInsets.only(left: 16, top: 16, bottom: 8),
+                      child: Text(lang.tr('account_settings'), style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.black87)),
                     ),
                     _buildFlipkartTile(
                       icon: Icons.location_on_outlined,
-                      title: 'Saved Addresses',
+                      title: lang.tr('saved_addresses'),
                       iconColor: AppColors.primaryRed,
                       onTap: () {
                         Navigator.push(context, MaterialPageRoute(builder: (context) => const MyAddressesScreen()));
@@ -428,18 +476,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
                     _buildFlipkartTile(
                       icon: Icons.credit_card_outlined,
-                      title: 'Saved Cards & Wallet',
+                      title: lang.tr('saved_cards_wallet'),
                       iconColor: AppColors.primaryRed,
                       onTap: _showPaymentMethodsSheet,
                     ),
 
                     _buildFlipkartTile(
                       icon: Icons.language_outlined,
-                      title: 'Select Language',
+                      title: lang.tr('select_language'),
+                      subtitle: lang.currentLanguageName,
                       iconColor: AppColors.primaryRed,
-                      onTap: () {
-                        // TODO: Implement language selection
-                      },
+                      onTap: _showLanguageSelectionSheet,
                     ),
                   ],
                 ),
@@ -453,13 +500,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Padding(
-                      padding: EdgeInsets.only(left: 16, top: 16, bottom: 8),
-                      child: Text('Services', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.black87)),
+                    Padding(
+                      padding: const EdgeInsets.only(left: 16, top: 16, bottom: 8),
+                      child: Text(lang.tr('services'), style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.black87)),
                     ),
                     _buildFlipkartTile(
                       icon: Icons.engineering_outlined,
-                      title: 'Installation Bookings',
+                      title: lang.tr('installation_bookings'),
                       iconColor: AppColors.primaryRed,
                       onTap: () {
                         Navigator.push(context, MaterialPageRoute(builder: (context) => const InstallationServiceScreen()));
@@ -468,7 +515,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
                     _buildFlipkartTile(
                       icon: Icons.headset_mic_outlined,
-                      title: 'Help Center',
+                      title: lang.tr('help_center'),
                       iconColor: AppColors.primaryRed,
                       onTap: () {
                         Navigator.push(context, MaterialPageRoute(builder: (context) => const SupportCenterScreen()));
@@ -485,7 +532,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 color: Colors.white,
                 child: _buildFlipkartTile(
                   icon: Icons.card_giftcard,
-                  title: 'Refer & Earn',
+                  title: lang.tr('refer_earn'),
                   iconColor: AppColors.primaryRed,
                   onTap: _showReferralSheet,
                 ),
@@ -547,6 +594,130 @@ class _ProfileScreenState extends State<ProfileScreen> {
           ],
         ),
       ),
+    );
+  }
+
+  void _showLanguageSelectionSheet() {
+    final languages = [
+      {'code': 'en', 'name': 'English', 'native': 'English', 'sub': 'Default'},
+      {'code': 'ta', 'name': 'Tamil', 'native': 'தமிழ்', 'sub': 'Tamil'},
+      {'code': 'hi', 'name': 'Hindi', 'native': 'हिन्दी', 'sub': 'Hindi'},
+      {'code': 'te', 'name': 'Telugu', 'native': 'తెలుగు', 'sub': 'Telugu'},
+      {'code': 'ml', 'name': 'Malayalam', 'native': 'മലയാളം', 'sub': 'Malayalam'},
+      {'code': 'kn', 'name': 'Kannada', 'native': 'ಕನ್ನಡ', 'sub': 'Kannada'},
+    ];
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            return SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 20),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Row(
+                            children: const [
+                              Icon(Icons.language, color: AppColors.primaryRed, size: 24),
+                              SizedBox(width: 10),
+                              Text(
+                                'Select Language',
+                                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+                              ),
+                            ],
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.close, color: Colors.black54),
+                            onPressed: () => Navigator.pop(context),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const Divider(height: 1, color: Color(0xFFE2E8F0)),
+                    const SizedBox(height: 8),
+                    ...languages.map((lang) {
+                      final langProvider = Provider.of<LanguageProvider>(context, listen: false);
+                      final isSelected = Provider.of<LanguageProvider>(context).currentLanguage == lang['code'];
+                      return ListTile(
+                        onTap: () {
+                          langProvider.setLanguage(lang['code']!);
+                          Navigator.pop(context);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Row(
+                                children: [
+                                  const Icon(Icons.check_circle, color: Colors.white, size: 18),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    'Language set to ${lang['name']} (${lang['native']})',
+                                    style: const TextStyle(fontWeight: FontWeight.bold),
+                                  ),
+                                ],
+                              ),
+                              backgroundColor: const Color(0xFF15803D),
+                              duration: const Duration(seconds: 2),
+                              behavior: SnackBarBehavior.floating,
+                            ),
+                          );
+                        },
+                        leading: Container(
+                          width: 40,
+                          height: 40,
+                          decoration: BoxDecoration(
+                            color: isSelected ? const Color(0xFFFEF2F2) : const Color(0xFFF8FAFC),
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                              color: isSelected ? AppColors.primaryRed : const Color(0xFFE2E8F0),
+                              width: isSelected ? 1.5 : 1,
+                            ),
+                          ),
+                          child: Center(
+                            child: Text(
+                              lang['native']!.characters.first,
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                                color: isSelected ? AppColors.primaryRed : const Color(0xFF64748B),
+                              ),
+                            ),
+                          ),
+                        ),
+                        title: Text(
+                          lang['native']!,
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
+                            color: isSelected ? AppColors.primaryRed : const Color(0xFF0F172A),
+                          ),
+                        ),
+                        subtitle: Text(
+                          '${lang['name']} • ${lang['sub']}',
+                          style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                        ),
+                        trailing: isSelected
+                            ? const Icon(Icons.check_circle, color: AppColors.primaryRed, size: 22)
+                            : const Icon(Icons.radio_button_unchecked, color: Color(0xFFCBD5E1), size: 22),
+                      );
+                    }).toList(),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
     );
   }
 }

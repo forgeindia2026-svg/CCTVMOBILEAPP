@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/services/api_service.dart';
 import '../../../core/services/storage_service.dart';
+import '../../../core/services/location_service.dart';
 import '../../../core/providers/cart_provider.dart';
 import '../../navigation/main_navigation_screen.dart';
 
@@ -18,14 +20,69 @@ class _CartScreenState extends State<CartScreen> {
   String _selectedServiceType = 'DELIVERY_INSTALLATION';
 
   void _showCheckoutDialog(CartProvider cartProvider) async {
-    final name = await StorageService.getUserName() ?? 'Customer';
-    final email = await StorageService.getUserEmail() ?? 'customer@example.com';
-    final phone = await StorageService.getUserPhone() ?? '9876543210';
+    String name = await StorageService.getUserName() ?? 'Customer';
+    final email = await StorageService.getUserEmail() ?? '';
+    String phone = await StorageService.getUserPhone() ?? '';
+
+    // Fetch user address from live original MongoDB database
+    String userAddress = '';
+    if (email.isNotEmpty && email != 'customer@example.com') {
+      try {
+        final profileRes = await ApiService.get('auth/profile?email=${Uri.encodeComponent(email)}');
+        if (profileRes != null && profileRes['success'] == true && profileRes['data'] != null) {
+          final data = profileRes['data'];
+          final dbAddr = data['address']?.toString().trim() ?? '';
+          if (dbAddr.isNotEmpty) {
+            userAddress = dbAddr;
+          }
+          // Sync profile to local storage cache
+          await StorageService.saveSession(
+            token: (await StorageService.getToken()) ?? 'session-token',
+            email: email,
+            name: data['name']?.toString() ?? name,
+            phone: data['phone']?.toString() ?? phone,
+            address: userAddress,
+          );
+        }
+      } catch (e) {
+        debugPrint('Could not fetch live profile address from DB: $e');
+      }
+    }
+
+    // Fallback to local storage
+    if (userAddress.isEmpty) {
+      final cachedAddr = await StorageService.getUserAddress();
+      if (cachedAddr != null && cachedAddr.trim().isNotEmpty) {
+        userAddress = cachedAddr.trim();
+      }
+    }
+
+    // Check LocationService saved delivery address
+    if (userAddress.isEmpty) {
+      final savedLoc = await LocationService.getSavedAddress();
+      if (savedLoc.isNotEmpty && !savedLoc.contains('Shoolagiri / Hosur') && !savedLoc.contains('Hosur / Shoolagiri')) {
+        userAddress = savedLoc;
+      }
+    }
+
+    // Check saved addresses list
+    if (userAddress.isEmpty) {
+      final list = await LocationService.getSavedAddresses();
+      if (list.isNotEmpty && (list.first['address'] ?? '').isNotEmpty) {
+        userAddress = list.first['address']!;
+        if ((name.isEmpty || name == 'Customer') && (list.first['name'] ?? '').isNotEmpty) {
+          name = list.first['name']!;
+        }
+        if (phone.isEmpty && (list.first['phone'] ?? '').isNotEmpty) {
+          phone = list.first['phone']!;
+        }
+      }
+    }
 
     final nameCtrl = TextEditingController(text: name);
-    final emailCtrl = TextEditingController(text: email);
-    final phoneCtrl = TextEditingController(text: phone);
-    final addressCtrl = TextEditingController(text: '12, 3rd Cross Street, Anna Nagar, Chennai - 600040');
+    final emailCtrl = TextEditingController(text: email.isNotEmpty ? email : 'customer@example.com');
+    final phoneCtrl = TextEditingController(text: phone.isNotEmpty ? phone : '');
+    final addressCtrl = TextEditingController(text: userAddress);
 
     if (!mounted) return;
 
@@ -105,7 +162,15 @@ class _CartScreenState extends State<CartScreen> {
                               const SizedBox(height: 4),
                               TextField(
                                 controller: phoneCtrl,
+                                keyboardType: TextInputType.phone,
+                                maxLength: 10,
+                                inputFormatters: [
+                                  FilteringTextInputFormatter.digitsOnly,
+                                  LengthLimitingTextInputFormatter(10),
+                                ],
                                 decoration: InputDecoration(
+                                  counterText: '',
+                                  hintText: '10-digit number',
                                   border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
                                   contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                                 ),
@@ -117,12 +182,60 @@ class _CartScreenState extends State<CartScreen> {
                     ),
 
                     const SizedBox(height: 10),
-                    const Text('Delivery & Installation Address', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text('Delivery & Installation Address', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                        InkWell(
+                          onTap: () async {
+                            final chosen = await LocationService.showLocationPickerDetails(context, addressCtrl.text);
+                            if (chosen != null) {
+                              setModalState(() {
+                                final newAddr = chosen['address'] ?? '';
+                                final newName = chosen['name'] ?? '';
+                                final newPhone = chosen['phone'] ?? '';
+
+                                if (newAddr.isNotEmpty) {
+                                  addressCtrl.text = newAddr;
+                                }
+                                if (newName.isNotEmpty && newName != 'Customer') {
+                                  nameCtrl.text = newName;
+                                }
+                                if (newPhone.isNotEmpty) {
+                                  phoneCtrl.text = newPhone;
+                                }
+                              });
+                            }
+                          },
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFEFF6FF),
+                              borderRadius: BorderRadius.circular(6),
+                              border: Border.all(color: const Color(0xFFBFDBFE)),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: const [
+                                Icon(Icons.location_searching, size: 12, color: Color(0xFF2563EB)),
+                                SizedBox(width: 4),
+                                Text(
+                                  'Change / Pick',
+                                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF2563EB)),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
                     const SizedBox(height: 4),
                     TextField(
                       controller: addressCtrl,
                       maxLines: 2,
                       decoration: InputDecoration(
+                        hintText: 'Enter complete address (Door No, Street, Landmark, Pincode)',
+                        hintStyle: const TextStyle(fontSize: 12, color: Color(0xFF94A3B8)),
                         border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
                         contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                       ),
@@ -132,68 +245,94 @@ class _CartScreenState extends State<CartScreen> {
                     const Text('Service & Installation Option', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
                     const SizedBox(height: 6),
 
-                    InkWell(
-                      onTap: () {
-                        setModalState(() {
-                          _selectedServiceType = 'DELIVERY_INSTALLATION';
-                        });
-                      },
-                      child: Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: _selectedServiceType == 'DELIVERY_INSTALLATION' ? AppColors.primaryRedLight : Colors.white,
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(
-                            color: _selectedServiceType == 'DELIVERY_INSTALLATION' ? AppColors.primaryRed : const Color(0xFFE2E8F0),
-                          ),
-                        ),
-                        child: Row(
-                          children: [
-                            Icon(
-                              _selectedServiceType == 'DELIVERY_INSTALLATION' ? Icons.radio_button_checked : Icons.radio_button_off,
-                              color: _selectedServiceType == 'DELIVERY_INSTALLATION' ? AppColors.primaryRed : const Color(0xFF94A3B8),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Column(
+                    Row(
+                      children: [
+                        Expanded(
+                          child: InkWell(
+                            onTap: () {
+                              setModalState(() {
+                                _selectedServiceType = 'DELIVERY_INSTALLATION';
+                              });
+                            },
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
+                              decoration: BoxDecoration(
+                                color: _selectedServiceType == 'DELIVERY_INSTALLATION'
+                                    ? AppColors.primaryRed.withOpacity(0.05)
+                                    : Colors.white,
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                  color: _selectedServiceType == 'DELIVERY_INSTALLATION'
+                                      ? AppColors.primaryRed
+                                      : const Color(0xFFE2E8F0),
+                                  width: _selectedServiceType == 'DELIVERY_INSTALLATION' ? 1.5 : 1,
+                                ),
+                              ),
+                              child: const Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
-                                children: const [
-                                  Text('Product Delivery + Free Technician Installation', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFF0F172A))),
-                                  Text('Backend automatically assigns certified technician', style: TextStyle(fontSize: 11, color: AppColors.textSecondary)),
+                                children: [
+                                  Text(
+                                    'DELIVERY + INSTALLATION',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.bold,
+                                      color: Color(0xFF0F172A),
+                                    ),
+                                  ),
+                                  SizedBox(height: 4),
+                                  Text(
+                                    'Verified technicians for expert setup.',
+                                    style: TextStyle(fontSize: 10, color: AppColors.textSecondary),
+                                  ),
                                 ],
                               ),
                             ),
-                          ],
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    InkWell(
-                      onTap: () {
-                        setModalState(() {
-                          _selectedServiceType = 'ONLY_DELIVERY';
-                        });
-                      },
-                      child: Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: _selectedServiceType == 'ONLY_DELIVERY' ? AppColors.primaryRedLight : Colors.white,
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(
-                            color: _selectedServiceType == 'ONLY_DELIVERY' ? AppColors.primaryRed : const Color(0xFFE2E8F0),
                           ),
                         ),
-                        child: Row(
-                          children: [
-                            Icon(
-                              _selectedServiceType == 'ONLY_DELIVERY' ? Icons.radio_button_checked : Icons.radio_button_off,
-                              color: _selectedServiceType == 'ONLY_DELIVERY' ? AppColors.primaryRed : const Color(0xFF94A3B8),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: InkWell(
+                            onTap: () {
+                              setModalState(() {
+                                _selectedServiceType = 'ONLY_DELIVERY';
+                              });
+                            },
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
+                              decoration: BoxDecoration(
+                                color: _selectedServiceType == 'ONLY_DELIVERY'
+                                    ? AppColors.primaryRed.withOpacity(0.05)
+                                    : Colors.white,
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                  color: _selectedServiceType == 'ONLY_DELIVERY'
+                                      ? AppColors.primaryRed
+                                      : const Color(0xFFE2E8F0),
+                                  width: _selectedServiceType == 'ONLY_DELIVERY' ? 1.5 : 1,
+                                ),
+                              ),
+                              child: const Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'DELIVERY ONLY',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.bold,
+                                      color: Color(0xFF0F172A),
+                                    ),
+                                  ),
+                                  SizedBox(height: 4),
+                                  Text(
+                                    'Standard product shipping only.',
+                                    style: TextStyle(fontSize: 10, color: AppColors.textSecondary),
+                                  ),
+                                ],
+                              ),
                             ),
-                            const SizedBox(width: 12),
-                            const Text('Product Delivery Only', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Color(0xFF0F172A))),
-                          ],
+                          ),
                         ),
-                      ),
+                      ],
                     ),
 
                     const SizedBox(height: 16),
@@ -214,6 +353,33 @@ class _CartScreenState extends State<CartScreen> {
                         ],
                       ),
                     ),
+                    const SizedBox(height: 12),
+
+                    // Payment Method Notice (Cash On Delivery / Site Payment)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFDCFCE7),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: const Color(0xFF86EFAC)),
+                      ),
+                      child: Row(
+                        children: const [
+                          Icon(Icons.payments_outlined, color: Color(0xFF166534), size: 18),
+                          SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'Payment: Pay After Installation / Cash on Delivery',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
+                                color: Color(0xFF166534),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
 
                     const SizedBox(height: 16),
 
@@ -230,16 +396,39 @@ class _CartScreenState extends State<CartScreen> {
                         onPressed: _isSubmittingOrder
                             ? null
                             : () async {
+                                final cleanAddr = addressCtrl.text.trim();
+                                if (cleanAddr.isEmpty) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text('Please enter your delivery & installation address'),
+                                      backgroundColor: AppColors.primaryRed,
+                                    ),
+                                  );
+                                  return;
+                                }
+                                if (phoneCtrl.text.trim().isEmpty || phoneCtrl.text.trim().length < 10) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text('Please enter a valid 10-digit mobile number'),
+                                      backgroundColor: AppColors.primaryRed,
+                                    ),
+                                  );
+                                  return;
+                                }
                                 setModalState(() {
                                   _isSubmittingOrder = true;
                                 });
-                                await _submitOrderToBackend(
+                                final orderNum = await _submitOrderToBackend(
                                   customerName: nameCtrl.text.trim(),
                                   customerEmail: emailCtrl.text.trim(),
                                   customerPhone: phoneCtrl.text.trim(),
-                                  shippingAddress: addressCtrl.text.trim(),
+                                  shippingAddress: cleanAddr,
+                                  setModalState: setModalState,
                                 );
-                                if (context.mounted) Navigator.pop(context);
+                                if (orderNum != null && context.mounted) {
+                                  Navigator.pop(context); // Pop the modal sheet first!
+                                  _showSuccessDialog(context, orderNum); // Show dialog on parent screen!
+                                }
                               },
                         child: _isSubmittingOrder
                             ? const CircularProgressIndicator(color: Colors.white)
@@ -257,23 +446,79 @@ class _CartScreenState extends State<CartScreen> {
     );
   }
 
-  Future<void> _submitOrderToBackend({
+  void _showSuccessDialog(BuildContext context, String orderNum) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: Column(
+            children: const [
+              CircleAvatar(
+                radius: 28,
+                backgroundColor: Color(0xFFDCFCE7),
+                child: Icon(Icons.check_circle, color: Color(0xFF166534), size: 36),
+              ),
+              SizedBox(height: 12),
+              Text('Order Placed Successfully!', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+            ],
+          ),
+          content: Text(
+            'Your Order ID is $orderNum.\n\nA SK Certified Technician has been automatically assigned to your order for delivery & installation!',
+            textAlign: TextAlign.center,
+            style: const TextStyle(fontSize: 13, color: AppColors.textSecondary),
+          ),
+          actions: [
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primaryRed,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                ),
+                onPressed: () {
+                  Navigator.pop(context);
+                  // Navigate to Orders Tab (index 2) to track live status!
+                  Navigator.pushAndRemoveUntil(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const MainNavigationScreen(initialIndex: 2),
+                    ),
+                    (route) => false,
+                  );
+                },
+                child: const Text('Track Order & Technician'),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Future<String?> _submitOrderToBackend({
     required String customerName,
     required String customerEmail,
     required String customerPhone,
     required String shippingAddress,
+    required StateSetter setModalState,
   }) async {
     try {
       final cartProvider = Provider.of<CartProvider>(context, listen: false);
       final cartItemsForOrder = cartProvider.items.map((item) {
         return {
-          'product': item['productId'],
-          'quantity': item['qty'],
+          'productId': item['productId'].toString(),
+          'title': item['title'].toString(),
+          'price': (item['price'] as num).toDouble(),
+          'quantity': (item['qty'] as num).toInt(),
+          'image': item['image'].toString(),
         };
       }).toList();
 
       final res = await ApiService.post('orders', {
-        'products': cartItemsForOrder,
+        'items': cartItemsForOrder,
         'customerName': customerName,
         'customerEmail': customerEmail,
         'customerPhone': customerPhone,
@@ -290,75 +535,56 @@ class _CartScreenState extends State<CartScreen> {
 
         cartProvider.clearCart();
 
-        // Save session user details so orders screen loads live data instantly
+        // Save session user details and address so profile and orders load live data instantly
         await StorageService.saveSession(
           token: (await StorageService.getToken()) ?? 'session-token',
           email: customerEmail,
           phone: customerPhone,
           name: customerName,
+          address: shippingAddress,
         );
 
+        // Update live MongoDB database user profile with this address
+        if (customerEmail.isNotEmpty) {
+          try {
+            await ApiService.put('auth/profile', {
+              'email': customerEmail,
+              'name': customerName,
+              'phone': customerPhone,
+              'address': shippingAddress,
+            });
+            debugPrint('Live MongoDB profile address updated: $shippingAddress');
+          } catch (e) {
+            debugPrint('Note: Failed to sync address to backend: $e');
+          }
+        }
+
+        await LocationService.saveAddress(shippingAddress);
+        await LocationService.addSavedAddress({
+          'name': customerName,
+          'phone': customerPhone,
+          'address': shippingAddress,
+          'type': 'Home',
+          'isDefault': 'true',
+        });
+
         if (mounted) {
+          setModalState(() {
+            _isSubmittingOrder = false;
+          });
           setState(() {
             _isSubmittingOrder = false;
           });
-
-          // Show Order Success Modal
-          showDialog(
-            context: context,
-            barrierDismissible: false,
-            builder: (context) {
-              return AlertDialog(
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                title: Column(
-                  children: const [
-                    CircleAvatar(
-                      radius: 28,
-                      backgroundColor: Color(0xFFDCFCE7),
-                      child: Icon(Icons.check_circle, color: Color(0xFF166534), size: 36),
-                    ),
-                    SizedBox(height: 12),
-                    Text('Order Placed Successfully!', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
-                  ],
-                ),
-                content: Text(
-                  'Your Order ID is $orderNum.\n\nA SK Certified Technician has been automatically assigned to your order for delivery & installation!',
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(fontSize: 13, color: AppColors.textSecondary),
-                ),
-                actions: [
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.primaryRed,
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                      ),
-                      onPressed: () {
-                        Navigator.pop(context);
-                        // Navigate to Orders Tab (index 2) to track live status!
-                        Navigator.pushAndRemoveUntil(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => const MainNavigationScreen(initialIndex: 2),
-                          ),
-                          (route) => false,
-                        );
-                      },
-                      child: const Text('Track Order & Technician'),
-                    ),
-                  ),
-                ],
-              );
-            },
-          );
         }
+        return orderNum;
       } else {
         throw Exception(res?['message'] ?? 'Failed to place order.');
       }
     } catch (e) {
       if (mounted) {
+        setModalState(() {
+          _isSubmittingOrder = false;
+        });
         setState(() {
           _isSubmittingOrder = false;
         });
@@ -369,6 +595,7 @@ class _CartScreenState extends State<CartScreen> {
           ),
         );
       }
+      return null;
     }
   }
 
@@ -534,12 +761,17 @@ class _CartScreenState extends State<CartScreen> {
                 decoration: BoxDecoration(
                   color: AppColors.surfaceSecondary,
                   borderRadius: BorderRadius.circular(12),
-                  image: item['image'] != null && item['image'].toString().isNotEmpty
+                  image: item['image'] != null && item['image'].toString().isNotEmpty && !item['image'].toString().startsWith('local:')
                       ? DecorationImage(
                           image: NetworkImage(item['image']),
                           fit: BoxFit.contain,
                         )
-                      : null,
+                      : (item['image'] != null && item['image'].toString().startsWith('local:')
+                          ? DecorationImage(
+                              image: AssetImage('assets/images/${item['image'].toString().split(':')[1]}'),
+                              fit: BoxFit.contain,
+                            )
+                          : null),
                 ),
                 child: item['image'] == null || item['image'].toString().isEmpty
                     ? const Icon(Icons.videocam, color: AppColors.primaryRed, size: 36)
