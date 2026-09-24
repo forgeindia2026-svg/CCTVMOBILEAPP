@@ -48,6 +48,9 @@ dependencies:
   flutter_map: ^8.3.1
   latlong2: ^0.10.1
   image_picker: ^1.1.2
+  record: ^7.1.1
+  audioplayers: ^6.8.1
+  path_provider: ^2.1.6
 
 dev_dependencies:
   flutter_test:
