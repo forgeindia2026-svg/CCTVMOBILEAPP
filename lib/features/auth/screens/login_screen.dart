@@ -20,8 +20,7 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _isLoading = false;
   bool _obscurePassword = true;
   bool _obscureConfirmPassword = true;
-  bool _rememberMe = true;
-  bool _agreeTerms = true;
+  final bool _agreeTerms = true;
 
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
@@ -589,7 +588,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 decoration: BoxDecoration(
                   color: Colors.white,
                   boxShadow: [
-                    BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 4, offset: const Offset(0, -2))
+                    BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 4, offset: const Offset(0, -2))
                   ],
                 ),
                 child: Column(

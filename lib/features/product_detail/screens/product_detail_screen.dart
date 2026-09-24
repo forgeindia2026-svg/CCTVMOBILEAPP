@@ -798,8 +798,6 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
 
   // Similar Product Card Builder (Flipkart Style)
   Widget _buildSimilarProductCard(BuildContext context, ProductModel item) {
-    final imageUrl = item.fullImageUrl;
-
     return GestureDetector(
       onTap: () {
         Navigator.pushReplacement(
@@ -1094,8 +1092,8 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
 
   void _showShareModal(BuildContext context, ProductModel? p, String titleText, String priceText) {
     final String shareContent = '''
-📹 *${titleText}*
-💰 *Price:* ${priceText}
+📹 *$titleText*
+💰 *Price:* $priceText
 🛡️ *Warranty:* ${p?.displayWarranty ?? '1 Year Brand Warranty'}
 🚚 *Delivery:* Free Delivery across Tamil Nadu & Bangalore
 💵 *Payment:* 100% Cash on Delivery & Pay After Installation

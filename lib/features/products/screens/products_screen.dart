@@ -41,9 +41,7 @@ class _ProductsScreenState extends State<ProductsScreen> {
 
   bool _isLoading = true;
   List<ProductModel> _backendProducts = [];
-  final Set<String> _wishlistedIds = {};
-  
-  List<String> _selectedBrands = [];
+  final List<String> _selectedBrands = [];
   double _selectedMinRating = 0.0;
 
   final List<String> _sortOptions = [
@@ -53,8 +51,6 @@ class _ProductsScreenState extends State<ProductsScreen> {
     'Newest First',
     'Customer Rating',
   ];
-
-  final List<Map<String, dynamic>> _fallbackProducts = const [];
 
   @override
   void initState() {
@@ -178,11 +174,17 @@ class _ProductsScreenState extends State<ProductsScreen> {
       if (_selectedSubCategory != null && _selectedSubCategory!.isNotEmpty) {
         final sub = _selectedSubCategory!.toLowerCase().trim();
         String keyword = sub;
-        if (sub == 'ip cameras') keyword = 'ip';
-        else if (sub == 'wifi cameras') keyword = 'wifi';
-        else if (sub == 'ptz cameras') keyword = 'ptz';
-        else if (sub == 'dome cameras') keyword = 'dome';
-        else if (sub == 'bullet cameras') keyword = 'bullet';
+        if (sub == 'ip cameras') {
+          keyword = 'ip';
+        } else if (sub == 'wifi cameras') {
+          keyword = 'wifi';
+        } else if (sub == 'ptz cameras') {
+          keyword = 'ptz';
+        } else if (sub == 'dome cameras') {
+          keyword = 'dome';
+        } else if (sub == 'bullet cameras') {
+          keyword = 'bullet';
+        }
 
         matchesSubCategory = cat.contains(keyword) || title.contains(keyword);
       }
@@ -671,7 +673,6 @@ class _ProductsScreenState extends State<ProductsScreen> {
   // 2-Column Grid Item Card Layout (Flipkart Style)
   Widget _buildGridProductCard(BuildContext context, ProductModel item) {
     final lang = Provider.of<LanguageProvider>(context);
-    final imageUrl = item.fullImageUrl;
 
     return GestureDetector(
       onTap: () {
@@ -993,7 +994,6 @@ class _ProductsScreenState extends State<ProductsScreen> {
 
   // 1-Column List Item Card Layout
   Widget _buildListProductCard(BuildContext context, ProductModel item) {
-    final imageUrl = item.fullImageUrl;
 
     return GestureDetector(
       onTap: () {
@@ -1433,7 +1433,7 @@ class _ProductsScreenState extends State<ProductsScreen> {
                   },
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                    color: isSelected ? Colors.blue.withOpacity(0.1) : Colors.transparent,
+                    color: isSelected ? Colors.blue.withValues(alpha: 0.1) : Colors.transparent,
                     child: Row(
                       children: [
                         Expanded(
@@ -1451,7 +1451,7 @@ class _ProductsScreenState extends State<ProductsScreen> {
                     ),
                   ),
                 );
-              }).toList(),
+              }),
             ],
           ),
         );
@@ -1648,7 +1648,7 @@ class _ProductsScreenState extends State<ProductsScreen> {
                         ),
                       ),
                     );
-                  }).toList(),
+                  }),
                 ],
               ),
             );

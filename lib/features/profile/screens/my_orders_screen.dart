@@ -38,9 +38,11 @@ class _MyOrdersScreenState extends State<MyOrdersScreen> {
         orders = await ApiService.fetchOrders(email: activeEmail);
       }
 
+      final productOrdersOnly = orders.where((o) => !o.isServiceRequest).toList();
+
       if (mounted) {
         setState(() {
-          _userOrders = orders;
+          _userOrders = productOrdersOnly;
           _isLoading = false;
         });
       }

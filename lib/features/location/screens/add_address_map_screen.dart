@@ -3,7 +3,6 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_map/flutter_map.dart';
-import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
 import 'package:latlong2/latlong.dart';
 import '../../../core/services/location_service.dart';
@@ -32,7 +31,7 @@ class _AddAddressMapScreenState extends State<AddAddressMapScreen> {
   bool _isLoadingLocation = false;
   bool _isSearching = false;
   List<Map<String, dynamic>> _searchResults = [];
-  bool _showDetailsForm = false;
+  final bool _showDetailsForm = false;
 
   // Real Map Center Coordinates (Default: Bengaluru 12.9716, 77.5946)
   LatLng _centerLatLng = const LatLng(12.9716, 77.5946);

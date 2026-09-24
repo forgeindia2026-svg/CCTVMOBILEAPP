@@ -182,10 +182,11 @@ class _CartScreenState extends State<CartScreen> {
                     ),
 
                     const SizedBox(height: 10),
+                    // Delivery & Installation Address Card (Matching Image 1 & Image 2 design)
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        const Text('Delivery & Installation Address', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                        const Text('Delivery & Installation Address', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Color(0xFF0F172A))),
                         InkWell(
                           onTap: () async {
                             final chosen = await LocationService.showLocationPickerDetails(context, addressCtrl.text);
@@ -208,20 +209,20 @@ class _CartScreenState extends State<CartScreen> {
                             }
                           },
                           child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                             decoration: BoxDecoration(
                               color: const Color(0xFFEFF6FF),
-                              borderRadius: BorderRadius.circular(6),
+                              borderRadius: BorderRadius.circular(8),
                               border: Border.all(color: const Color(0xFFBFDBFE)),
                             ),
-                            child: Row(
+                            child: const Row(
                               mainAxisSize: MainAxisSize.min,
-                              children: const [
-                                Icon(Icons.location_searching, size: 12, color: Color(0xFF2563EB)),
+                              children: [
+                                Icon(Icons.my_location, size: 13, color: Color(0xFF2563EB)),
                                 SizedBox(width: 4),
                                 Text(
                                   'Change / Pick',
-                                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF2563EB)),
+                                  style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: Color(0xFF2563EB)),
                                 ),
                               ],
                             ),
@@ -229,15 +230,124 @@ class _CartScreenState extends State<CartScreen> {
                         ),
                       ],
                     ),
-                    const SizedBox(height: 4),
-                    TextField(
-                      controller: addressCtrl,
-                      maxLines: 2,
-                      decoration: InputDecoration(
-                        hintText: 'Enter complete address (Door No, Street, Landmark, Pincode)',
-                        hintStyle: const TextStyle(fontSize: 12, color: Color(0xFF94A3B8)),
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    const SizedBox(height: 8),
+
+                    // Saved Address Card View (Matching Image 1 Card style)
+                    InkWell(
+                      onTap: () async {
+                        final chosen = await LocationService.showLocationPickerDetails(context, addressCtrl.text);
+                        if (chosen != null) {
+                          setModalState(() {
+                            final newAddr = chosen['address'] ?? '';
+                            final newName = chosen['name'] ?? '';
+                            final newPhone = chosen['phone'] ?? '';
+
+                            if (newAddr.isNotEmpty) {
+                              addressCtrl.text = newAddr;
+                            }
+                            if (newName.isNotEmpty && newName != 'Customer') {
+                              nameCtrl.text = newName;
+                            }
+                            if (newPhone.isNotEmpty) {
+                              phoneCtrl.text = newPhone;
+                            }
+                          });
+                        }
+                      },
+                      borderRadius: BorderRadius.circular(14),
+                      child: Container(
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFFFBEB), // Yellow Cream background as in Image 1
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(
+                            color: const Color(0xFFF59E0B), // Golden yellow border
+                            width: 1.5,
+                          ),
+                        ),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // Selected Radio icon
+                            Container(
+                              margin: const EdgeInsets.only(top: 2),
+                              width: 20,
+                              height: 20,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                border: Border.all(
+                                  color: const Color(0xFFD97706),
+                                  width: 6,
+                                ),
+                                color: Colors.white,
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    children: [
+                                      Text(
+                                        nameCtrl.text.isNotEmpty ? nameCtrl.text : 'Customer',
+                                        style: const TextStyle(
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.bold,
+                                          color: Color(0xFF0F172A),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                        decoration: BoxDecoration(
+                                          color: const Color(0xFFFEF3C7),
+                                          borderRadius: BorderRadius.circular(4),
+                                        ),
+                                        child: const Text(
+                                          'WORK',
+                                          style: TextStyle(
+                                            fontSize: 9.5,
+                                            fontWeight: FontWeight.bold,
+                                            color: Color(0xFFB45309),
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    addressCtrl.text.isNotEmpty ? addressCtrl.text : 'Enter complete delivery address',
+                                    style: const TextStyle(
+                                      fontSize: 12.5,
+                                      color: Color(0xFF334155),
+                                      height: 1.35,
+                                    ),
+                                  ),
+                                  if (phoneCtrl.text.isNotEmpty) ...[
+                                    const SizedBox(height: 4),
+                                    Row(
+                                      children: [
+                                        const Icon(Icons.phone_outlined, size: 12, color: Color(0xFF64748B)),
+                                        const SizedBox(width: 4),
+                                        Text(
+                                          'Contact: ${phoneCtrl.text}',
+                                          style: const TextStyle(
+                                            fontSize: 11.5,
+                                            fontWeight: FontWeight.w500,
+                                            color: Color(0xFF64748B),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                            const Icon(Icons.edit_outlined, size: 18, color: Color(0xFFD97706)),
+                          ],
+                        ),
                       ),
                     ),
 
@@ -258,7 +368,7 @@ class _CartScreenState extends State<CartScreen> {
                               padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
                               decoration: BoxDecoration(
                                 color: _selectedServiceType == 'DELIVERY_INSTALLATION'
-                                    ? AppColors.primaryRed.withOpacity(0.05)
+                                    ? AppColors.primaryRed.withValues(alpha: 0.05)
                                     : Colors.white,
                                 borderRadius: BorderRadius.circular(12),
                                 border: Border.all(
@@ -301,7 +411,7 @@ class _CartScreenState extends State<CartScreen> {
                               padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
                               decoration: BoxDecoration(
                                 color: _selectedServiceType == 'ONLY_DELIVERY'
-                                    ? AppColors.primaryRed.withOpacity(0.05)
+                                    ? AppColors.primaryRed.withValues(alpha: 0.05)
                                     : Colors.white,
                                 borderRadius: BorderRadius.circular(12),
                                 border: Border.all(

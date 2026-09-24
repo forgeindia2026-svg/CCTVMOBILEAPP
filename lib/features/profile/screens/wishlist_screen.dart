@@ -17,7 +17,6 @@ class WishlistScreen extends StatefulWidget {
 }
 
 class _WishlistScreenState extends State<WishlistScreen> {
-  bool _isLoadingFallback = false;
   List<ProductModel> _suggestedProducts = [];
 
   @override
@@ -28,16 +27,14 @@ class _WishlistScreenState extends State<WishlistScreen> {
 
   Future<void> _fetchSuggestedProducts() async {
     try {
-      setState(() => _isLoadingFallback = true);
       final products = await ApiService.fetchProducts();
       if (mounted) {
         setState(() {
           _suggestedProducts = products.take(6).toList();
-          _isLoadingFallback = false;
         });
       }
     } catch (e) {
-      if (mounted) setState(() => _isLoadingFallback = false);
+      // ignore
     }
   }
 

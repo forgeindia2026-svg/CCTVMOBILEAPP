@@ -8,6 +8,7 @@ import '../../../core/services/location_service.dart';
 import '../../auth/screens/login_screen.dart';
 import '../../installation/screens/installation_service_screen.dart';
 import 'my_orders_screen.dart';
+import 'my_service_requests_screen.dart';
 import 'my_addresses_screen.dart';
 import 'wishlist_screen.dart';
 import 'support_center_screen.dart';
@@ -24,9 +25,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   String _userContact = 'Log in to manage your account';
   String _userPhone = '';
   String _userAddress = '';
-  String _amcPlan = 'Gold AMC Plan';
   bool _isLoggedIn = false;
-  bool _isLoading = true;
 
   @override
   void initState() {
@@ -35,10 +34,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Future<void> _loadUserProfile() async {
-    setState(() {
-      _isLoading = true;
-    });
-
     final loggedIn = await StorageService.isLoggedIn();
     final localName = await StorageService.getUserName();
     final localEmail = await StorageService.getUserEmail();
@@ -52,7 +47,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
           _userName = localName ?? 'Guest User';
           _userContact = localPhone ?? 'Log in to view account';
           _userAddress = localAddress ?? '';
-          _isLoading = false;
         });
       }
       return;
@@ -71,8 +65,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
             _userContact = data['email']?.toString() ?? localEmail;
             _userPhone = phone;
             _userAddress = addr;
-            _amcPlan = data['amcPlan']?.toString() ?? 'Gold AMC Plan';
-            _isLoading = false;
           });
         }
         if (addr.isNotEmpty) {
@@ -87,7 +79,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
             _userContact = localEmail;
             _userPhone = localPhone ?? '';
             _userAddress = localAddress ?? '';
-            _isLoading = false;
           });
         }
       }
@@ -98,7 +89,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
           _isLoggedIn = loggedIn;
           _userName = localName ?? 'Customer';
           _userContact = localEmail;
-          _isLoading = false;
         });
       }
     }
@@ -401,7 +391,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     children: [
                       CircleAvatar(
                         radius: 24,
-                        backgroundColor: AppColors.primaryRed.withOpacity(0.1),
+                        backgroundColor: AppColors.primaryRed.withValues(alpha: 0.1),
                         child: const Icon(Icons.person, color: AppColors.primaryRed, size: 28),
                       ),
                       const SizedBox(width: 16),
@@ -437,6 +427,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       iconColor: AppColors.primaryRed,
                       onTap: () {
                         Navigator.push(context, MaterialPageRoute(builder: (context) => const MyOrdersScreen()));
+                      },
+                    ),
+
+                    _buildFlipkartTile(
+                      icon: Icons.build_circle_outlined,
+                      title: 'Service Requests',
+                      subtitle: 'Check booked installation & repair requests',
+                      iconColor: AppColors.primaryRed,
+                      onTap: () {
+                        Navigator.push(context, MaterialPageRoute(builder: (context) => const MyServiceRequestsScreen()));
                       },
                     ),
 
@@ -710,7 +710,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             ? const Icon(Icons.check_circle, color: AppColors.primaryRed, size: 22)
                             : const Icon(Icons.radio_button_unchecked, color: Color(0xFFCBD5E1), size: 22),
                       );
-                    }).toList(),
+                    }),
                   ],
                 ),
               ),

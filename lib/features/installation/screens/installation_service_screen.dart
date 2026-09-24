@@ -64,28 +64,9 @@ class InstallationServiceScreen extends StatelessWidget {
 
                     _buildServiceTile(
                       context,
-                      title: lang.tr('cctv_installation_title'),
-                      subtitle: '${lang.tr('starting_from')} ₹499',
-                      icon: Icons.videocam_outlined,
-                    ),
-                    _buildServiceTile(
-                      context,
                       title: lang.tr('cctv_repair_title'),
                       subtitle: '${lang.tr('starting_from')} ₹299',
                       icon: Icons.build_outlined,
-                    ),
-                    _buildServiceTile(
-                      context,
-                      title: lang.tr('amc_service_title'),
-                      subtitle: '${lang.tr('starting_from')} ₹998/year',
-                      icon: Icons.verified_outlined,
-                    ),
-                    _buildServiceTile(
-                      context,
-                      title: 'Site Survey',
-                      subtitle: 'FREE',
-                      icon: Icons.location_on_outlined,
-                      isFree: true,
                     ),
                   ],
                 ),

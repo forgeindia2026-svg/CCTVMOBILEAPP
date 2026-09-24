@@ -70,14 +70,6 @@ class _HomeScreenState extends State<HomeScreen> {
     {'price': 'Under ₹4,999', 'tag': 'COMPLETE CCTV KITS', 'maxPrice': 4999.0, 'color': Color(0xFFFEF3C7), 'textColor': Color(0xFFB45309)},
   ];
 
-  final List<String> _brandLogos = [
-    'https://upload.wikimedia.org/wikipedia/commons/thumb/1/18/Honeywell_logo.svg/512px-Honeywell_logo.svg.png',
-    'https://upload.wikimedia.org/wikipedia/commons/thumb/a/ae/Hikvision_logo.svg/512px-Hikvision_logo.svg.png',
-    'https://upload.wikimedia.org/wikipedia/commons/thumb/1/13/TP-Link_logo_2016.svg/512px-TP-Link_logo_2016.svg.png',
-    'https://upload.wikimedia.org/wikipedia/commons/thumb/f/f6/EZVIZ_logo.svg/512px-EZVIZ_logo.svg.png',
-    'https://upload.wikimedia.org/wikipedia/commons/thumb/7/77/Dahua_Technology_logo.svg/512px-Dahua_Technology_logo.svg.png',
-  ];
-
   @override
   void initState() {
     super.initState();
@@ -258,8 +250,6 @@ class _HomeScreenState extends State<HomeScreen> {
     final minutes = _formatTwoDigits((_secondsLeft % 3600) ~/ 60);
     final seconds = _formatTwoDigits(_secondsLeft % 60);
 
-    final statusBarHeight = MediaQuery.of(context).padding.top;
-
     return Scaffold(
       backgroundColor: const Color(0xFFEF4444),
       body: SafeArea(
@@ -366,7 +356,8 @@ class _HomeScreenState extends State<HomeScreen> {
                     child: InkWell(
                       onTap: () async {
                         final selected = await LocationService.showLocationPicker(context, _deliveryAddress);
-                        if (selected != null && mounted) {
+                        if (!context.mounted) return;
+                        if (selected != null) {
                           setState(() {
                             _deliveryAddress = selected;
                           });
@@ -1078,7 +1069,6 @@ class _HomeScreenState extends State<HomeScreen> {
                       itemCount: _liveProducts.length > 5 ? 5 : _liveProducts.length,
                       itemBuilder: (context, index) {
                         final p = _liveProducts[index];
-                        final imgUrl = p.fullImageUrl;
                         return Container(
                           width: 100,
                           margin: const EdgeInsets.only(right: 10),
@@ -1194,7 +1184,6 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _buildMeeshoStyleProductCard(BuildContext context, ProductModel product) {
     final lang = Provider.of<LanguageProvider>(context);
-    final imageUrl = product.fullImageUrl;
 
     return GestureDetector(
       onTap: () {
@@ -1295,7 +1284,6 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _buildGridProductCard(BuildContext context, ProductModel product) {
     final lang = Provider.of<LanguageProvider>(context);
-    final imageUrl = product.fullImageUrl;
 
     return GestureDetector(
       onTap: () {

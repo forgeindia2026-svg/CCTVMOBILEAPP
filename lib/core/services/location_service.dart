@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
-import '../../features/location/screens/add_address_map_screen.dart';
+import 'storage_service.dart';
 
 class LocationService {
   static const String _prefKeyAddress = 'sk_delivery_address';
@@ -325,7 +325,7 @@ class LocationService {
   }
 
   /// IP-based Location Fallback (Works 100% reliably even when GPS is turned off)
-  static Future<String> _fetchIpBasedLocation() async {
+  static Future<String> fetchIpBasedLocation() async {
     // 1. Try ip-api.com
     try {
       final res = await http.get(Uri.parse('http://ip-api.com/json')).timeout(const Duration(seconds: 3));
@@ -368,7 +368,12 @@ class LocationService {
       final raw = prefs.getString(_prefKeySavedAddresses);
       if (raw != null && raw.isNotEmpty) {
         final List decoded = json.decode(raw);
-        return decoded.map((e) => Map<String, String>.from(e)).toList();
+        final list = decoded.map((e) => Map<String, String>.from(e)).where((item) {
+          final addr = item['address'] ?? '';
+          final name = item['name'] ?? '';
+          return !(name.contains('Dhanush') && (addr.contains('Vinayaka Layout') || addr.contains('Harur')));
+        }).toList();
+        return list;
       }
     } catch (_) {}
 
@@ -426,8 +431,38 @@ class _LocationPickerSheet extends StatefulWidget {
 class _LocationPickerSheetState extends State<_LocationPickerSheet> {
   final TextEditingController _searchCtrl = TextEditingController();
   bool _isDetecting = false;
+  bool _isAddingNewAddress = false;
   List<Map<String, String>> _addresses = [];
   List<Map<String, String>> _filteredAddresses = [];
+  int _selectedIndex = 0;
+
+  // Add address form controllers
+  final _addFormKey = GlobalKey<FormState>();
+  final _nameCtrl = TextEditingController();
+  final _phoneCtrl = TextEditingController();
+  final _pincodeCtrl = TextEditingController();
+  final _localityCtrl = TextEditingController();
+  final _streetCtrl = TextEditingController();
+  final _cityCtrl = TextEditingController();
+  String _selectedState = 'Tamil Nadu';
+  String _selectedType = 'Home';
+
+  final List<String> _indianStates = [
+    'Tamil Nadu',
+    'Karnataka',
+    'Andhra Pradesh',
+    'Kerala',
+    'Telangana',
+    'Maharashtra',
+    'Delhi',
+    'Puducherry',
+    'Goa',
+    'Gujarat',
+    'Odisha',
+    'West Bengal',
+    'Rajasthan',
+    'Uttar Pradesh',
+  ];
 
   @override
   void initState() {
@@ -436,30 +471,33 @@ class _LocationPickerSheetState extends State<_LocationPickerSheet> {
   }
 
   Future<void> _loadAddresses() async {
-    final list = await LocationService.getSavedAddresses();
+    var list = await LocationService.getSavedAddresses();
+    if (list.isEmpty) {
+      final cachedAddr = await StorageService.getUserAddress();
+      final userName = await StorageService.getUserName();
+      final userPhone = await StorageService.getUserPhone();
+      if (cachedAddr != null && cachedAddr.trim().isNotEmpty) {
+        final Map<String, String> profileAddr = {
+          'name': userName?.isNotEmpty == true ? userName! : 'Customer',
+          'phone': userPhone?.isNotEmpty == true ? userPhone! : '',
+          'address': cachedAddr.trim(),
+          'type': 'Home',
+          'isDefault': 'true',
+          'isPrimary': 'true',
+        };
+        await LocationService.addSavedAddress(profileAddr);
+        list = [profileAddr];
+      }
+    }
+
     if (mounted) {
       setState(() {
         _addresses = list;
         _filteredAddresses = list;
+        final found = list.indexWhere((element) => element['address'] == widget.currentAddress);
+        _selectedIndex = found >= 0 ? found : (list.isNotEmpty ? 0 : -1);
       });
     }
-  }
-
-  void _onSearch(String query) {
-    final q = query.trim().toLowerCase();
-    if (q.isEmpty) {
-      setState(() => _filteredAddresses = _addresses);
-      return;
-    }
-
-    setState(() {
-      _filteredAddresses = _addresses.where((item) {
-        final name = (item['name'] ?? '').toLowerCase();
-        final addr = (item['address'] ?? '').toLowerCase();
-        final type = (item['type'] ?? '').toLowerCase();
-        return name.contains(q) || addr.contains(q) || type.contains(q);
-      }).toList();
-    });
   }
 
   Future<void> _detectLiveLocation() async {
@@ -469,11 +507,11 @@ class _LocationPickerSheetState extends State<_LocationPickerSheet> {
 
     try {
       final loc = await LocationService.fetchLiveLocation();
+      await LocationService.saveAddress(loc);
       if (mounted) {
-        await LocationService.saveAddress(loc);
         Navigator.pop(context, {
           'address': loc,
-          'name': '',
+          'name': 'Customer',
           'phone': '',
         });
       }
@@ -484,21 +522,44 @@ class _LocationPickerSheetState extends State<_LocationPickerSheet> {
     }
   }
 
-  Future<void> _openAddNewAddress() async {
-    final result = await Navigator.push<String>(
-      context,
-      MaterialPageRoute(builder: (ctx) => const AddAddressMapScreen()),
-    );
-    if (result != null && mounted) {
-      final list = await LocationService.getSavedAddresses();
-      final latest = list.isNotEmpty ? list.first : {'address': result, 'name': '', 'phone': ''};
-      Navigator.pop(context, latest);
+  Future<void> _saveNewAddress() async {
+    if (!_addFormKey.currentState!.validate()) return;
+
+    final street = _streetCtrl.text.trim();
+    final locality = _localityCtrl.text.trim();
+    final city = _cityCtrl.text.trim();
+    final state = _selectedState;
+    final pincode = _pincodeCtrl.text.trim();
+    final name = _nameCtrl.text.trim();
+    final phone = _phoneCtrl.text.trim();
+
+    final fullAddress = '$street, $locality, $city, $state - $pincode';
+
+    final newItem = {
+      'name': name.isNotEmpty ? name : 'Customer',
+      'phone': phone,
+      'address': fullAddress,
+      'type': _selectedType,
+      'isDefault': 'false',
+    };
+
+    await LocationService.addSavedAddress(newItem);
+    await LocationService.saveAddress(fullAddress);
+
+    if (mounted) {
+      Navigator.pop(context, newItem);
     }
   }
 
   @override
   void dispose() {
     _searchCtrl.dispose();
+    _nameCtrl.dispose();
+    _phoneCtrl.dispose();
+    _pincodeCtrl.dispose();
+    _localityCtrl.dispose();
+    _streetCtrl.dispose();
+    _cityCtrl.dispose();
     super.dispose();
   }
 
@@ -506,26 +567,20 @@ class _LocationPickerSheetState extends State<_LocationPickerSheet> {
   Widget build(BuildContext context) {
     return Container(
       constraints: BoxConstraints(
-        maxHeight: MediaQuery.of(context).size.height * 0.85,
+        maxHeight: MediaQuery.of(context).size.height * 0.90,
       ),
       decoration: const BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      padding: EdgeInsets.only(
-        left: 18,
-        right: 18,
-        top: 12,
-        bottom: MediaQuery.of(context).viewInsets.bottom + 16,
-      ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Drag Handle
+          const SizedBox(height: 10),
           Center(
             child: Container(
-              width: 38,
+              width: 40,
               height: 4,
               decoration: BoxDecoration(
                 color: Colors.grey.shade300,
@@ -533,331 +588,579 @@ class _LocationPickerSheetState extends State<_LocationPickerSheet> {
               ),
             ),
           ),
-          const SizedBox(height: 12),
-
-          // Header (Flipkart style)
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Text(
-                'Select delivery address',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                  color: Color(0xFF1E293B),
-                ),
-              ),
-              IconButton(
-                icon: const Icon(Icons.close, size: 22, color: Color(0xFF64748B)),
-                onPressed: () => Navigator.pop(context),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-
-          // 1. Search Bar (Flipkart Style)
-          Container(
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: const Color(0xFFCBD5E1)),
-            ),
-            child: TextField(
-              controller: _searchCtrl,
-              onChanged: _onSearch,
-              decoration: InputDecoration(
-                hintText: 'Search by name, area, street, pincode',
-                hintStyle: const TextStyle(fontSize: 13, color: Color(0xFF94A3B8)),
-                prefixIcon: const Icon(Icons.search, size: 20, color: Color(0xFF64748B)),
-                suffixIcon: _searchCtrl.text.isNotEmpty
-                    ? IconButton(
-                        icon: const Icon(Icons.clear, size: 18, color: Color(0xFF64748B)),
-                        onPressed: () {
-                          _searchCtrl.clear();
-                          _onSearch('');
-                        },
-                      )
-                    : null,
-                contentPadding: const EdgeInsets.symmetric(vertical: 12, horizontal: 14),
-                border: InputBorder.none,
-              ),
-            ),
-          ),
-          const SizedBox(height: 12),
-
-          // 2. Action Card: Use my current location (Flipkart Cream card style)
-          InkWell(
-            onTap: _isDetecting ? null : _detectLiveLocation,
-            borderRadius: BorderRadius.circular(12),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-              decoration: BoxDecoration(
-                color: const Color(0xFFFEF9E7), // Flipkart light cream background
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: const Color(0xFFFDE68A)),
-              ),
-              child: Row(
-                children: [
-                  if (_isDetecting)
-                    const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF92400E)),
-                    )
-                  else
-                    const Icon(Icons.location_on_outlined, color: Color(0xFF92400E), size: 22),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Text(
-                      _isDetecting ? 'Fetching high-accuracy GPS location...' : 'Use my current location',
-                      style: const TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 14,
-                        color: Color(0xFF78350F),
-                      ),
-                    ),
-                  ),
-                  const Icon(Icons.chevron_right, color: Color(0xFF78350F), size: 20),
-                ],
-              ),
-            ),
-          ),
           const SizedBox(height: 10),
 
-          // 3. Action Card: + Add New (Flipkart style)
-          InkWell(
-            onTap: _openAddNewAddress,
-            borderRadius: BorderRadius.circular(12),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-              decoration: BoxDecoration(
-                color: const Color(0xFFFEF9E7),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: const Color(0xFFFDE68A)),
-              ),
-              child: const Row(
-                children: [
-                  Icon(Icons.add, color: Color(0xFF92400E), size: 22),
-                  SizedBox(width: 12),
-                  Expanded(
-                    child: Text(
-                      'Add New',
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 14,
-                        color: Color(0xFF78350F),
-                      ),
-                    ),
+          // 1. Dark Navy Blue Header Banner (Image 1 & Image 2)
+          Container(
+            width: double.infinity,
+            margin: const EdgeInsets.symmetric(horizontal: 14),
+            padding: const EdgeInsets.all(16),
+            decoration: const BoxDecoration(
+              color: Color(0xFF0B1F38), // Dark Navy Blue
+              borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Yellow Location Pin Avatar
+                Container(
+                  width: 44,
+                  height: 44,
+                  decoration: const BoxDecoration(
+                    color: Color(0xFFFFC107), // Vibrant Yellow
+                    shape: BoxShape.circle,
                   ),
-                  Icon(Icons.chevron_right, color: Color(0xFF78350F), size: 20),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 16),
-
-          // 4. Saved Addresses Heading
-          const Text(
-            'Saved addresses',
-            style: TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.bold,
-              color: Color(0xFF64748B),
-            ),
-          ),
-          const SizedBox(height: 8),
-
-          // 5. Saved Addresses List (Flipkart Exact Cards)
-          Expanded(
-            child: _filteredAddresses.isEmpty
-                ? Center(
-                    child: Padding(
-                      padding: const EdgeInsets.all(20),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
+                  child: const Icon(
+                    Icons.location_on,
+                    color: Color(0xFF0B1F38),
+                    size: 24,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
                         children: [
-                          Icon(Icons.location_on_outlined, size: 36, color: Colors.grey.shade400),
-                          const SizedBox(height: 8),
-                          const Text(
-                            'No saved addresses yet',
-                            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Color(0xFF64748B)),
+                          const Expanded(
+                            child: Text(
+                              'Select Delivery & Service Address',
+                              style: TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.white,
+                              ),
+                            ),
                           ),
-                          const SizedBox(height: 4),
-                          const Text(
-                            'Tap "Add New" or "Use my current location" above to add your address',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(fontSize: 11.5, color: Color(0xFF94A3B8)),
+                          const SizedBox(width: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF382F00),
+                              borderRadius: BorderRadius.circular(6),
+                              border: Border.all(color: const Color(0xFFEAB308), width: 1),
+                            ),
+                            child: const Text(
+                              'STEP 1 OF 2',
+                              style: TextStyle(
+                                fontSize: 9.5,
+                                fontWeight: FontWeight.bold,
+                                color: Color(0xFFFACC15),
+                              ),
+                            ),
                           ),
                         ],
                       ),
-                    ),
-                  )
-                : ListView.separated(
-                    itemCount: _filteredAddresses.length,
-                    separatorBuilder: (ctx, i) => const SizedBox(height: 10),
-                    itemBuilder: (ctx, i) {
-                      final item = _filteredAddresses[i];
-                      final type = item['type'] ?? 'Home';
-                      final name = item['name'] ?? 'Customer';
-                      final address = item['address'] ?? '';
-                      final phone = item['phone'] ?? '';
-                      final distance = item['distance'] ?? '15 km';
-                      final isHome = type.toLowerCase().contains('home');
-
-                      final isCurrentlySelected = widget.currentAddress == address;
-
-                      return InkWell(
-                        onTap: () {
-                          LocationService.saveAddress(address);
-                          Navigator.pop(context, {
-                            'name': name,
-                            'phone': phone,
-                            'address': address,
-                          });
-                        },
-                        borderRadius: BorderRadius.circular(14),
-                        child: Container(
-                          padding: const EdgeInsets.all(14),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(14),
-                            border: Border.all(
-                              color: isCurrentlySelected ? const Color(0xFF2563EB) : const Color(0xFFE2E8F0),
-                              width: isCurrentlySelected ? 1.5 : 1,
-                            ),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withValues(alpha: 0.02),
-                                blurRadius: 4,
-                                offset: const Offset(0, 2),
-                              ),
-                            ],
-                          ),
-                          child: Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              // Type Badge Icon (Home / Work square)
-                              Container(
-                                width: 56,
-                                padding: const EdgeInsets.symmetric(vertical: 8),
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFFF1F5F9),
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
-                                child: Column(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(
-                                      isHome ? Icons.home_outlined : Icons.apartment_outlined,
-                                      color: const Color(0xFF1E293B),
-                                      size: 22,
-                                    ),
-                                    const SizedBox(height: 3),
-                                    Text(
-                                      distance,
-                                      style: const TextStyle(
-                                        fontSize: 9.5,
-                                        fontWeight: FontWeight.w600,
-                                        color: Color(0xFF64748B),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-
-                              // Address Info
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Row(
-                                      children: [
-                                        Text(
-                                          name,
-                                          style: const TextStyle(
-                                            fontSize: 14,
-                                            fontWeight: FontWeight.bold,
-                                            color: Color(0xFF0F172A),
-                                          ),
-                                        ),
-                                        if (isCurrentlySelected) ...[
-                                          const SizedBox(width: 8),
-                                          Container(
-                                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                            decoration: BoxDecoration(
-                                              color: const Color(0xFFDBEAFE),
-                                              borderRadius: BorderRadius.circular(4),
-                                            ),
-                                            child: const Text(
-                                              'SELECTED',
-                                              style: TextStyle(
-                                                fontSize: 9,
-                                                fontWeight: FontWeight.bold,
-                                                color: Color(0xFF1D4ED8),
-                                              ),
-                                            ),
-                                          ),
-                                        ],
-                                      ],
-                                    ),
-                                    const SizedBox(height: 3),
-                                    Text(
-                                      address,
-                                      maxLines: 2,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: const TextStyle(
-                                        fontSize: 12,
-                                        color: Color(0xFF475569),
-                                        height: 1.3,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 4),
-                                    Row(
-                                      children: [
-                                        const Icon(Icons.phone_outlined, size: 12, color: Color(0xFF64748B)),
-                                        const SizedBox(width: 4),
-                                        Text(
-                                          phone,
-                                          style: const TextStyle(
-                                            fontSize: 12,
-                                            fontWeight: FontWeight.w600,
-                                            color: Color(0xFF1E293B),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ],
-                                ),
-                              ),
-
-                              // 3-dots Menu
-                              PopupMenuButton<String>(
-                                icon: const Icon(Icons.more_vert, size: 20, color: Color(0xFF64748B)),
-                                padding: EdgeInsets.zero,
-                                constraints: const BoxConstraints(),
-                                onSelected: (val) async {
-                                  if (val == 'delete') {
-                                    await LocationService.deleteSavedAddress(i);
-                                    _loadAddresses();
-                                  } else if (val == 'select') {
-                                    LocationService.saveAddress(address);
-                                    if (mounted) Navigator.pop(context, address);
-                                  }
-                                },
-                                itemBuilder: (ctx) => [
-                                  const PopupMenuItem(value: 'select', child: Text('Deliver to this address')),
-                                  const PopupMenuItem(value: 'delete', child: Text('Delete address', style: TextStyle(color: Colors.red))),
-                                ],
-                              ),
-                            ],
-                          ),
+                      const SizedBox(height: 4),
+                      const Text(
+                        'Choose where your order or service booking should be delivered',
+                        style: TextStyle(
+                          fontSize: 11.5,
+                          color: Color(0xFF94A3B8),
                         ),
-                      );
-                    },
+                      ),
+                    ],
                   ),
+                ),
+                const SizedBox(width: 6),
+                GestureDetector(
+                  onTap: () => Navigator.pop(context),
+                  child: Container(
+                    padding: const EdgeInsets.all(6),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.1),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(Icons.close, color: Colors.white70, size: 18),
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          // 2. Main Content Body
+          Expanded(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              child: _isAddingNewAddress ? _buildAddAddressForm() : _buildSavedAddressesList(),
+            ),
+          ),
+
+          // 3. Bottom Action Bar (Overflow Proof)
+          Container(
+            padding: EdgeInsets.only(
+              left: 14,
+              right: 14,
+              top: 10,
+              bottom: MediaQuery.of(context).viewInsets.bottom + 12,
+            ),
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              border: Border(top: BorderSide(color: Color(0xFFF1F5F9))),
+            ),
+            child: Row(
+              children: [
+                TextButton.icon(
+                  onPressed: () {
+                    if (_isAddingNewAddress) {
+                      setState(() => _isAddingNewAddress = false);
+                    } else {
+                      Navigator.pop(context);
+                    }
+                  },
+                  style: TextButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+                  ),
+                  icon: const Icon(Icons.arrow_back, size: 14, color: Color(0xFF64748B)),
+                  label: const Text(
+                    'BACK TO CART',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF64748B),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Align(
+                    alignment: Alignment.centerRight,
+                    child: ElevatedButton(
+                      onPressed: () {
+                        if (_isAddingNewAddress) {
+                          _saveNewAddress();
+                        } else if (_addresses.isNotEmpty && _selectedIndex < _addresses.length) {
+                          final chosen = _addresses[_selectedIndex];
+                          LocationService.saveAddress(chosen['address'] ?? '');
+                          Navigator.pop(context, chosen);
+                        } else {
+                          Navigator.pop(context);
+                        }
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF0B1F38), // Dark Navy Blue
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        elevation: 0,
+                      ),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Flexible(
+                            child: Text(
+                              'CONFIRM ADDRESS',
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold),
+                            ),
+                          ),
+                          SizedBox(width: 4),
+                          Icon(Icons.check_circle_outline, size: 14),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildSavedAddressesList() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Top GPS Quick Detect Bar
+        InkWell(
+          onTap: _isDetecting ? null : _detectLiveLocation,
+          borderRadius: BorderRadius.circular(12),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFEF9E7),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: const Color(0xFFFDE68A)),
+            ),
+            child: Row(
+              children: [
+                if (_isDetecting)
+                  const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF92400E)),
+                  )
+                else
+                  const Icon(Icons.my_location, color: Color(0xFF92400E), size: 20),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    _isDetecting ? 'Detecting live GPS location...' : 'Use current location (Auto GPS)',
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Color(0xFF78350F)),
+                  ),
+                ),
+                const Icon(Icons.chevron_right, color: Color(0xFF78350F), size: 18),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 14),
+
+        // SELECT FROM SAVED ADDRESSES Header Row
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            const Text(
+              'SELECT FROM SAVED ADDRESSES',
+              style: TextStyle(
+                fontSize: 11.5,
+                fontWeight: FontWeight.w800,
+                color: Color(0xFF64748B),
+                letterSpacing: 0.5,
+              ),
+            ),
+            InkWell(
+              onTap: () {
+                setState(() => _isAddingNewAddress = true);
+              },
+              child: const Row(
+                children: [
+                  Icon(Icons.add, size: 16, color: Color(0xFFF59E0B)),
+                  SizedBox(width: 4),
+                  Text(
+                    'Add New Address',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFFF59E0B),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 14),
+
+        // List of Cards (Image 1 Style)
+        ListView.separated(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          itemCount: _filteredAddresses.length,
+          separatorBuilder: (ctx, i) => const SizedBox(height: 12),
+          itemBuilder: (ctx, index) {
+            final item = _filteredAddresses[index];
+            final isSelected = index == _selectedIndex;
+            final type = item['type'] ?? 'Home';
+            final isWork = type.toLowerCase().contains('work');
+            final isDefault = item['isDefault'] == 'true' || item['isPrimary'] == 'true';
+
+            return GestureDetector(
+              onTap: () {
+                setState(() {
+                  _selectedIndex = index;
+                });
+              },
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: isSelected ? const Color(0xFFFFFBEB) : const Color(0xFFF8FAFC),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: isSelected ? const Color(0xFFF59E0B) : const Color(0xFFE2E8F0),
+                    width: isSelected ? 1.5 : 1,
+                  ),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Radio button
+                    Container(
+                      margin: const EdgeInsets.only(top: 2),
+                      width: 20,
+                      height: 20,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: isSelected ? const Color(0xFFD97706) : const Color(0xFF94A3B8),
+                          width: isSelected ? 6 : 2,
+                        ),
+                        color: Colors.white,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Wrap(
+                            crossAxisAlignment: WrapCrossAlignment.center,
+                            spacing: 8,
+                            runSpacing: 4,
+                            children: [
+                              Text(
+                                item['name'] ?? 'Saved Address',
+                                style: const TextStyle(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.bold,
+                                  color: Color(0xFF0F172A),
+                                ),
+                              ),
+                              // Type Badge (WORK / HOME)
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: isWork ? const Color(0xFFFEF3C7) : const Color(0xFFE0F2FE),
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: Text(
+                                  type.toUpperCase(),
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.bold,
+                                    color: isWork ? const Color(0xFFB45309) : const Color(0xFF0369A1),
+                                  ),
+                                ),
+                              ),
+                              if (isDefault && !isWork)
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFDCFCE7),
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  child: const Text(
+                                    'PRIMARY PROFILE ADDRESS',
+                                    style: TextStyle(
+                                      fontSize: 9,
+                                      fontWeight: FontWeight.bold,
+                                      color: Color(0xFF15803D),
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            item['address'] ?? '',
+                            style: const TextStyle(
+                              fontSize: 13,
+                              color: Color(0xFF334155),
+                              height: 1.4,
+                            ),
+                          ),
+                          if ((item['phone'] ?? '').isNotEmpty) ...[
+                            const SizedBox(height: 6),
+                            Row(
+                              children: [
+                                const Icon(Icons.phone_outlined, size: 14, color: Color(0xFF64748B)),
+                                const SizedBox(width: 4),
+                                Text(
+                                  'Contact: ${item['phone']}',
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w500,
+                                    color: Color(0xFF64748B),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        ),
+      ],
+    );
+  }
+
+  Widget _buildAddAddressForm() {
+    return Form(
+      key: _addFormKey,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // RECEIVER NAME *
+          _buildFormLabel('RECEIVER NAME *'),
+          const SizedBox(height: 6),
+          TextFormField(
+            controller: _nameCtrl,
+            decoration: _buildInputDeco('Full Name / Receiver Name'),
+            validator: (v) => v == null || v.trim().isEmpty ? 'Receiver name is required' : null,
+          ),
+          const SizedBox(height: 14),
+
+          // 10-DIGIT MOBILE NUMBER *
+          _buildFormLabel('10-DIGIT MOBILE NUMBER *'),
+          const SizedBox(height: 6),
+          TextFormField(
+            controller: _phoneCtrl,
+            keyboardType: TextInputType.phone,
+            maxLength: 10,
+            decoration: _buildInputDeco('10-digit mobile number').copyWith(counterText: ''),
+            validator: (v) {
+              if (v == null || v.trim().isEmpty) return 'Mobile number is required';
+              if (v.trim().length < 10) return 'Must be 10 digits';
+              return null;
+            },
+          ),
+          const SizedBox(height: 14),
+
+          // PINCODE *
+          _buildFormLabel('PINCODE *'),
+          const SizedBox(height: 6),
+          TextFormField(
+            controller: _pincodeCtrl,
+            keyboardType: TextInputType.number,
+            maxLength: 6,
+            decoration: _buildInputDeco('6-Digit Pincode').copyWith(counterText: ''),
+            validator: (v) {
+              if (v == null || v.trim().isEmpty) return 'Pincode is required';
+              if (v.trim().length < 6) return 'Must be 6 digits';
+              return null;
+            },
+          ),
+          const SizedBox(height: 14),
+
+          // LOCALITY / SECTOR *
+          _buildFormLabel('LOCALITY / SECTOR *'),
+          const SizedBox(height: 6),
+          TextFormField(
+            controller: _localityCtrl,
+            decoration: _buildInputDeco('Locality / Area'),
+            validator: (v) => v == null || v.trim().isEmpty ? 'Locality is required' : null,
+          ),
+          const SizedBox(height: 14),
+
+          // FLAT / HOUSE NO / STREET ADDRESS *
+          _buildFormLabel('FLAT / HOUSE NO / STREET ADDRESS *'),
+          const SizedBox(height: 6),
+          TextFormField(
+            controller: _streetCtrl,
+            decoration: _buildInputDeco('Building / House No, Street Name'),
+            validator: (v) => v == null || v.trim().isEmpty ? 'Address detail is required' : null,
+          ),
+          const SizedBox(height: 14),
+
+          // CITY *
+          _buildFormLabel('CITY *'),
+          const SizedBox(height: 6),
+          TextFormField(
+            controller: _cityCtrl,
+            decoration: _buildInputDeco('City'),
+            validator: (v) => v == null || v.trim().isEmpty ? 'City is required' : null,
+          ),
+          const SizedBox(height: 14),
+
+          // STATE *
+          _buildFormLabel('STATE *'),
+          const SizedBox(height: 6),
+          DropdownButtonFormField<String>(
+            initialValue: _indianStates.contains(_selectedState) ? _selectedState : _indianStates.first,
+            decoration: _buildInputDeco('Select State'),
+            items: _indianStates.map((st) {
+              return DropdownMenuItem(
+                value: st,
+                child: Text(st, style: const TextStyle(fontSize: 14, color: Color(0xFF0F172A))),
+              );
+            }).toList(),
+            onChanged: (val) {
+              if (val != null) {
+                setState(() => _selectedState = val);
+              }
+            },
+          ),
+          const SizedBox(height: 16),
+
+          // SAVE ADDRESS AS *
+          _buildFormLabel('SAVE ADDRESS AS *'),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              _buildTypePill('Home'),
+              const SizedBox(width: 10),
+              _buildTypePill('Work'),
+              const SizedBox(width: 10),
+              _buildTypePill('Other'),
+            ],
+          ),
+          const SizedBox(height: 20),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFormLabel(String label) {
+    return Text(
+      label,
+      style: const TextStyle(
+        fontSize: 11,
+        fontWeight: FontWeight.bold,
+        color: Color(0xFF64748B),
+        letterSpacing: 0.4,
+      ),
+    );
+  }
+
+  InputDecoration _buildInputDeco(String hintText) {
+    return InputDecoration(
+      hintText: hintText,
+      hintStyle: const TextStyle(fontSize: 13, color: Color(0xFF94A3B8)),
+      filled: true,
+      fillColor: Colors.white,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(color: Color(0xFFCBD5E1)),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(color: Color(0xFFCBD5E1)),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(color: Color(0xFF0F172A), width: 1.5),
+      ),
+    );
+  }
+
+  Widget _buildTypePill(String type) {
+    final isSelected = _selectedType == type;
+    return Expanded(
+      child: GestureDetector(
+        onTap: () {
+          setState(() {
+            _selectedType = type;
+          });
+        },
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          decoration: BoxDecoration(
+            color: isSelected ? const Color(0xFFFFB800) : Colors.white,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: isSelected ? const Color(0xFFD97706) : const Color(0xFFCBD5E1),
+            ),
+          ),
+          alignment: Alignment.center,
+          child: Text(
+            type,
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.bold,
+              color: isSelected ? Colors.black : const Color(0xFF475569),
+            ),
+          ),
+        ),
       ),
     );
   }
